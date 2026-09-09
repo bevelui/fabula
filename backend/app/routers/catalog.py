@@ -1,0 +1,18 @@
+# -*- coding: utf-8 -*-
+from fastapi import APIRouter
+from .. import catalog
+
+router = APIRouter(prefix="/catalog", tags=["catalog"])
+
+
+@router.get("/languages")
+def languages():
+    """All script/voice languages. `launch=false` = coming soon (CJK/RTL)."""
+    return catalog.LANGUAGES
+
+
+@router.get("/styles")
+def styles():
+    """Art-style presets. `custom` is also accepted on a project with style_custom text."""
+    return [{"id": s["id"], "name": s["name"], "realistic": s["realistic"]}
+            for s in catalog.STYLE_PRESETS]
