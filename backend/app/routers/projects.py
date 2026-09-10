@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
 import json, os
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from ..config import settings
 from .. import db, catalog
+from ..services import storage
 from ..models import ProjectCreate
 from ..deps import current_user
 from ..services import jobs
@@ -58,9 +59,14 @@ def project_file(pid: str, name: str, user: str = Depends(current_user)):
         raise HTTPException(404, "project not found")
     safe = os.path.basename(name)                       # prevent path traversal
     path = os.path.join(settings.OUTPUT_DIR, pid, safe)
-    if not os.path.isfile(path):
-        raise HTTPException(404, "file not found")
-    return FileResponse(path, filename=safe)
+    if os.path.isfile(path):
+        return FileResponse(path, filename=safe)
+    if storage.enabled():                               # durable copy in R2
+        try:
+            return RedirectResponse(storage.presigned_url(pid, safe))
+        except Exception:
+            pass
+    raise HTTPException(404, "file not found")
 
 
 @router.get("/projects/{pid}/zip")

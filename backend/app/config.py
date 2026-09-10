@@ -37,6 +37,11 @@ class Settings:
     # YouTube Data API key for channel analysis (optional at scaffold stage).
     YOUTUBE_API_KEY = os.environ.get("YOUTUBE_API_KEY", "")
     CORS_ORIGINS = os.environ.get("FABULA_CORS", "*").split(",")
+    # Cloudflare R2 (durable storage for finished files). Inert until all are set.
+    R2_ACCOUNT_ID = os.environ.get("R2_ACCOUNT_ID", "")
+    R2_ACCESS_KEY_ID = os.environ.get("R2_ACCESS_KEY_ID", "")
+    R2_SECRET_ACCESS_KEY = os.environ.get("R2_SECRET_ACCESS_KEY", "")
+    R2_BUCKET = os.environ.get("R2_BUCKET", "")
 
 
 settings = Settings()

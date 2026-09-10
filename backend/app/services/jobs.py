@@ -6,9 +6,10 @@ persisting status/progress/log to the DB so the app can poll /jobs/{id}. In
 production this becomes a real queue (Redis + RQ/Celery) with separate render
 workers — the DB shape and the /jobs API stay the same.
 """
-import json, threading, traceback
+import os, json, threading, traceback
 from .. import db, security
-from . import engine
+from ..config import settings
+from . import engine, storage
 
 
 def _load_keys(user_id):
@@ -56,6 +57,12 @@ def _run(jid):
         db.update("jobs", jid, {"status": "done", "stage": "complete", "progress": 1.0})
         db.update("projects", project["id"], {"status": "done"})
         log("JOB COMPLETE")
+        if storage.enabled():
+            try:
+                storage.upload_dir(project["id"],
+                                   os.path.join(settings.OUTPUT_DIR, project["id"]), log)
+            except Exception as e:
+                log(f"R2 upload skipped: {str(e)[:120]}")
     except Exception as e:
         db.update("jobs", jid, {"status": "error", "error": str(e)})
         db.update("projects", project["id"], {"status": "error"})
