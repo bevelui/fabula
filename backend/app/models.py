@@ -12,7 +12,11 @@ class ProjectCreate(BaseModel):
     style_custom: Optional[str] = None
     image_provider: str = "pollinations"     # free by default
     audio_provider: str = "edge"             # free by default
-    llm_model: str = "claude-sonnet-5"       # Claude model for script + scene prompts
+    # per-task Claude models ('custom' + *_custom lets you type an exact model id)
+    script_model: str = "claude-sonnet-5"    # writing the narration
+    script_model_custom: Optional[str] = None
+    scene_model: str = "claude-sonnet-5"     # directing the scenes / image prompts
+    scene_model_custom: Optional[str] = None
     voice_id: Optional[str] = Field(None, description="voice id for the chosen TTS provider")
     length_words: int = Field(1200, ge=100, le=8000)
 

@@ -39,11 +39,23 @@ def home():
 
 @app.get("/api", tags=["meta"])
 def api_info():
-    return {
-        "name": settings.APP_NAME, "docs": "/docs",
-        "endpoints": ["/catalog/languages", "/catalog/styles", "/projects",
-                      "/projects/{id}/generate", "/jobs/{id}", "/keys", "/feedback"],
+    """Diagnostics — confirms whether the DB (keys+projects) is on persistent storage."""
+    from .services import storage
+    dbp = settings.DB_PATH
+    info = {
+        "name": settings.APP_NAME, "version": settings.VERSION, "docs": "/docs",
+        "db_path": dbp,
+        "db_exists": os.path.exists(dbp),
+        "db_size_bytes": os.path.getsize(dbp) if os.path.exists(dbp) else 0,
+        "output_dir": settings.OUTPUT_DIR,
+        "r2_enabled": storage.enabled(),
     }
+    try:
+        info["projects_in_db"] = len(db.fetchall("projects"))
+        info["keys_in_db"] = len(db.fetchall("provider_keys"))
+    except Exception as e:
+        info["db_error"] = str(e)[:150]
+    return info
 
 
 app.include_router(catalog.router)

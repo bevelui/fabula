@@ -70,18 +70,29 @@ AUDIO_PROVIDERS = [
     {"id": "elevenlabs", "name": "ElevenLabs",         "key": "elevenlabs", "free": False},
 ]
 
-# Claude models for analysis / script / scene direction (needs the user's Anthropic key).
+# Claude models the user can pick per task (needs their Anthropic key). "custom" lets
+# them type any exact model id their account supports (e.g. an older Opus 4.x id).
 LLM_MODELS = [
-    {"id": "claude-sonnet-5", "name": "Claude Sonnet 5 (balanced)"},
     {"id": "claude-opus-5", "name": "Claude Opus 5 (best quality)"},
+    {"id": "claude-sonnet-5", "name": "Claude Sonnet 5 (balanced)"},
     {"id": "claude-haiku-4-5-20251001", "name": "Claude Haiku 4.5 (fast, cheap)"},
+    {"id": "claude-fable-5-1", "name": "Claude Fable 5.1"},
+    {"id": "custom", "name": "Custom model id…"},
 ]
 _DEFAULT_LLM = "claude-sonnet-5"
 
 
-def llm_model(mid):
+def llm_model(mid, custom=None):
+    """Resolve a chosen model to a real id. 'custom' uses the typed id; any id that
+    looks like a Claude model is allowed through so new/older versions still work."""
+    if mid == "custom" and custom and custom.strip():
+        return custom.strip()
     ids = {m["id"] for m in LLM_MODELS}
-    return mid if mid in ids else _DEFAULT_LLM
+    if mid in ids and mid != "custom":
+        return mid
+    if isinstance(mid, str) and mid.startswith("claude-"):
+        return mid
+    return _DEFAULT_LLM
 
 
 _STYLE_BY_ID = {s["id"]: s for s in STYLE_PRESETS}

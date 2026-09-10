@@ -24,7 +24,8 @@ def create_project(body: ProjectCreate, user: str = Depends(current_user)):
         "style_id": body.style_id, "style_custom": body.style_custom,
         "voice_id": body.voice_id,
         "image_provider": body.image_provider, "audio_provider": body.audio_provider,
-        "llm_model": catalog.llm_model(body.llm_model),
+        "script_model": catalog.llm_model(body.script_model, body.script_model_custom),
+        "scene_model": catalog.llm_model(body.scene_model, body.scene_model_custom),
         "length_words": body.length_words, "status": "draft",
         "created_at": db.now(), "updated_at": db.now(),
     })

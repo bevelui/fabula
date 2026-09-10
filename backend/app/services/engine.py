@@ -77,7 +77,7 @@ def run_stage(key, project, log, keys=None, artifacts=None):
             log("[skipped] no Anthropic (Claude) key in your BYOK vault — add one to enable")
             return {"script": None, "script_status": "needs_anthropic_key"}
         profile = artifacts.get("style_profile", {})
-        mdl = catalog.llm_model(project.get("llm_model"))
+        mdl = project.get("script_model") or "claude-sonnet-5"
         text = llm.generate_script(profile, lang, project.get("length_words", 1200),
                                    api_key, log, model=mdl)
         script_path = os.path.join(_project_out(project), "script.txt")
@@ -128,7 +128,7 @@ def run_stage(key, project, log, keys=None, artifacts=None):
         try:
             an = keys.get("anthropic")
             if an:
-                mdl = catalog.llm_model(project.get("llm_model"))
+                mdl = project.get("scene_model") or "claude-sonnet-5"
                 prompts = imageprompts.build_scene_prompts(script, lang, style, n, an, log, model=mdl)
             else:
                 log("no Claude key — using a simple scene split (add Claude for consistent characters)")
