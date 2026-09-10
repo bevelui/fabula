@@ -91,6 +91,9 @@
   .console{background:#211d17;color:#e8e0d0;margin:16px 20px;border-radius:10px;
     font-family:"IBM Plex Mono",monospace;font-size:12.5px}
   .console .b{padding:9px 13px;border-bottom:1px solid #3a332a;color:#cbbfa8;display:flex;gap:8px;align-items:center}
+  .spin{width:13px;height:13px;border:2px solid rgba(255,255,255,.18);border-top-color:#e6c98a;border-radius:50%;display:none}
+  .spin.on{display:inline-block;animation:spin .8s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
   .console pre{margin:0;padding:11px 13px;max-height:240px;overflow:auto;white-space:pre-wrap}
   .arts{display:flex;flex-wrap:wrap;gap:8px;padding:0 20px 20px}
   .art{border:1px solid var(--line);border-radius:8px;padding:8px 12px;background:var(--raise);font-size:13px;text-decoration:none;color:var(--slate-deep)}
@@ -166,7 +169,7 @@
           <input class="t" id="sceneCustom" placeholder="e.g. claude-opus-4-1-…"></div>
         <div class="row">
           <div><label class="f">Length (words)</label><input class="t" id="len" type="number" value="1200" min="100" max="8000"></div>
-          <div><label class="f">Number of images</label><input class="t" id="numimg" type="number" value="0" min="0" max="200" placeholder="0 = auto (~1 / 5 sec)"></div>
+          <div><label class="f">Number of images</label><input class="t" id="numimg" type="number" min="1" max="200" placeholder="Auto (default)"></div>
         </div>
         <label class="f">Voice id (Fish/11Labs)</label>
         <input class="t" id="voice" placeholder="optional for free voices">
@@ -290,7 +293,7 @@ async function selectProject(pid){
     <div class="stages">${stages}</div>
     <div class="bar"><i id="bar"></i></div>
     <div style="padding:14px 20px"><button class="btn slate" id="genBtn" onclick="generate('${pid}')">▶ Generate video</button></div>
-    <div class="console"><div class="b"><span id="cstat">idle</span></div><pre id="log">Add your keys (top-right), then Generate. Watch progress here.</pre></div>
+    <div class="console"><div class="b"><span id="spin" class="spin"></span><span id="cstat">idle</span></div><pre id="log">Add your keys (top-right), then Generate. Watch progress here.</pre></div>
     <div class="arts" id="arts"></div>`;
   if(p.last_job_id){ try{ const j=await api("/jobs/"+p.last_job_id); applyJob(pid,j);
     if(j.status==="running"||j.status==="queued") poll(pid,p.last_job_id);
@@ -305,6 +308,8 @@ async function generate(pid){
 }
 
 function applyJob(pid,j){
+  const running = j.status==="running"||j.status==="queued";
+  const sp=document.getElementById("spin"); if(sp) sp.classList.toggle("on", running);
   const log=document.getElementById("log"); if(log){log.textContent=(j.log&&j.log.length)?j.log.join("\n"):"(no output yet)";log.scrollTop=log.scrollHeight;}
   const bar=document.getElementById("bar"); if(bar) bar.style.width=Math.round((j.progress||0)*100)+"%";
   const cs=document.getElementById("cstat"); if(cs) cs.textContent = j.status==="running"?("running — "+(j.stage||"")):j.status;

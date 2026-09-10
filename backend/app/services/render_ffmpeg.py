@@ -59,6 +59,7 @@ def render_video(images_dir, audio_path, srt_path, out_path, log=lambda m: None,
             _run([ff, "-y", "-loglevel", "error", "-threads", "1", "-loop", "1", "-i", img,
                   "-vf", zoom, "-frames:v", str(d), "-r", str(FPS),
                   "-c:v", "libx264", "-preset", "ultrafast", "-crf", "23",
+                  "-x264-params", "rc-lookahead=1:ref=1:bframes=0:sync-lookahead=0",
                   "-pix_fmt", "yuv420p", clip])
             clips.append(clip)
         log(f"built {len(clips)} scene clips; joining + audio + captions")
@@ -81,6 +82,7 @@ def render_video(images_dir, audio_path, srt_path, out_path, log=lambda m: None,
         else:
             log("no captions to burn — rendering without subtitles")
         cmd += ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "23",
+                "-x264-params", "rc-lookahead=1:ref=1:bframes=0:sync-lookahead=0",
                 "-c:a", "aac", "-b:a", "160k", "-shortest",
                 "-map", "0:v:0", "-map", "1:a:0", final]
         _run(cmd, cwd=work)

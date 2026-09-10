@@ -83,6 +83,8 @@ def _one(provider, prompt, out, keys, w, h):
 def generate(provider, prompts, out_dir, keys, log=lambda m: None, tries=3, size=(1536, 864)):
     w, h = size
     os.makedirs(out_dir, exist_ok=True)
+    total = len(prompts)
+    log(f"generating {total} images with {provider} — this can take a few minutes…")
     paths, failed = [], 0
     for i, prompt in enumerate(prompts, 1):
         out = os.path.join(out_dir, f"img-{i:03d}.jpg")
@@ -92,6 +94,7 @@ def generate(provider, prompts, out_dir, keys, log=lambda m: None, tries=3, size
                 _one(provider, prompt, out, keys, w, h)
                 paths.append(out)
                 last = None
+                log(f"  image {i}/{total} ready")
                 break
             except Exception as e:
                 last = e
