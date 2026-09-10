@@ -47,6 +47,8 @@ def init_db():
                                ("projects", "image_provider", "TEXT"),
                                ("projects", "audio_provider", "TEXT"),
                                ("projects", "llm_model", "TEXT"),
+                               ("projects", "script_model", "TEXT"),
+                               ("projects", "scene_model", "TEXT"),
                                ("projects", "last_job_id", "TEXT")]:
             try:
                 c.execute(f"ALTER TABLE {tbl} ADD COLUMN {col} {decl}")
