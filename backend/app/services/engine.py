@@ -174,7 +174,7 @@ def run_stage(key, project, log, keys=None, artifacts=None):
             else:
                 render_ffmpeg.render_video(imgs, audio, srt, out, log)
         except Exception as e:
-            log(f"[failed] render error: {str(e)[:160]}")
+            log(f"[failed] render error: {str(e)[:400]}")
             return {"video": None, "video_status": "render_error"}
         return {"video": out}
 

@@ -19,8 +19,11 @@ SUB_STYLE = ("FontName=DejaVu Serif,Fontsize=20,PrimaryColour=&H00FFFFFF&,"
 def _run(cmd, cwd=None):
     r = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
     if r.returncode != 0:
-        tail = (r.stderr or "").strip().splitlines()[-6:]
-        raise RuntimeError("ffmpeg failed: " + " | ".join(tail))
+        err = (r.stderr or "").strip()
+        tail = " | ".join(err.splitlines()[-10:]) if err else ""
+        killed = r.returncode < 0
+        note = " [process killed — out of memory; try a shorter video or more RAM]" if killed else ""
+        raise RuntimeError(f"ffmpeg rc={r.returncode}{note}: {tail}")
 
 
 def render_video(images_dir, audio_path, srt_path, out_path, log=lambda m: None):
@@ -43,12 +46,13 @@ def render_video(images_dir, audio_path, srt_path, out_path, log=lambda m: None)
             d = total - base * (n - 1) if i == n - 1 else base   # last takes remainder
             d = max(2, d)
             clip = os.path.join(work, f"clip_{i:03d}.mp4")
-            zoom = ("scale=3840:-2,zoompan=z='min(zoom+0.0006,1.20)':"
+            # modest upscale (memory-light) + gentle zoom
+            zoom = ("scale=2048:-2,zoompan=z='min(zoom+0.0006,1.18)':"
                     f"d={d}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={W}x{H}:fps={FPS},"
                     "format=yuv420p")
-            _run([ff, "-y", "-loglevel", "error", "-loop", "1", "-i", img,
+            _run([ff, "-y", "-loglevel", "error", "-threads", "1", "-loop", "1", "-i", img,
                   "-vf", zoom, "-frames:v", str(d), "-r", str(FPS),
-                  "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+                  "-c:v", "libx264", "-preset", "veryfast", "-crf", "22",
                   "-pix_fmt", "yuv420p", clip])
             clips.append(clip)
         log(f"built {len(clips)} scene clips; joining + audio + captions")
@@ -64,9 +68,9 @@ def render_video(images_dir, audio_path, srt_path, out_path, log=lambda m: None)
         # burn subtitles (relative path, cwd=work → avoids Windows drive-colon escaping)
         shutil.copyfile(srt_path, os.path.join(work, "subs.srt"))
         final = os.path.join(work, "final.mp4")
-        _run([ff, "-y", "-loglevel", "error", "-i", silent, "-i", audio_path,
+        _run([ff, "-y", "-loglevel", "error", "-threads", "1", "-i", silent, "-i", audio_path,
               "-vf", f"subtitles=subs.srt:force_style='{SUB_STYLE}'",
-              "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+              "-c:v", "libx264", "-preset", "veryfast", "-crf", "22",
               "-c:a", "aac", "-b:a", "192k", "-shortest",
               "-map", "0:v:0", "-map", "1:a:0", final], cwd=work)
 
