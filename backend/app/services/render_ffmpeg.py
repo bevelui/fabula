@@ -14,7 +14,7 @@ FPS = 30
 # 720p by default so it fits small instances; set FABULA_VIDEO_HEIGHT=1080 on a bigger box.
 H = int(_os.environ.get("FABULA_VIDEO_HEIGHT", "720"))
 W = (H * 16 // 9) // 2 * 2
-_UP = (W * 5 // 2) // 2 * 2                       # ~2.5x supersample -> much less jitter
+_UP = (W * 5 // 2) // 2 * 2                       # 2.5x supersample (memory-safe on small box)
 SUB_STYLE = ("FontName=DejaVu Serif,Fontsize=18,PrimaryColour=&H00FFFFFF&,"
              "OutlineColour=&H00201810&,BorderStyle=1,Outline=2,Shadow=0,"
              "Alignment=2,MarginV=48")
@@ -51,7 +51,7 @@ def render_video(images_dir, audio_path, srt_path, out_path, log=lambda m: None)
             d = max(2, d)
             clip = os.path.join(work, f"clip_{i:03d}.mp4")
             # light upscale + gentle zoom; ultrafast = lowest memory
-            zoom = (f"scale={_UP}:-2,zoompan=z='min(zoom+0.00035,1.12)':"
+            zoom = (f"scale={_UP}:-2,zoompan=z='min(zoom+0.00022,1.09)':"
                     f"d={d}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={W}x{H}:fps={FPS},"
                     "format=yuv420p")
             _run([ff, "-y", "-loglevel", "error", "-threads", "1", "-loop", "1", "-i", img,

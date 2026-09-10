@@ -77,8 +77,9 @@ def run_stage(key, project, log, keys=None, artifacts=None):
             log("[skipped] no Anthropic (Claude) key in your BYOK vault — add one to enable")
             return {"script": None, "script_status": "needs_anthropic_key"}
         profile = artifacts.get("style_profile", {})
+        mdl = catalog.llm_model(project.get("llm_model"))
         text = llm.generate_script(profile, lang, project.get("length_words", 1200),
-                                   api_key, log)
+                                   api_key, log, model=mdl)
         script_path = os.path.join(_project_out(project), "script.txt")
         with open(script_path, "w", encoding="utf-8") as f:
             f.write(text)
@@ -127,10 +128,16 @@ def run_stage(key, project, log, keys=None, artifacts=None):
         try:
             an = keys.get("anthropic")
             if an:
-                prompts = imageprompts.build_scene_prompts(script, lang, style, n, an, log)
+                mdl = catalog.llm_model(project.get("llm_model"))
+                prompts = imageprompts.build_scene_prompts(script, lang, style, n, an, log, model=mdl)
             else:
                 log("no Claude key — using a simple scene split (add Claude for consistent characters)")
                 prompts = _naive_scene_prompts(script, style, n)
+            # save the prompts so the user can read them (also lands in the ZIP)
+            pf = os.path.join(_project_out(project), "prompts.txt")
+            with open(pf, "w", encoding="utf-8") as f:
+                for i, p in enumerate(prompts, 1):
+                    f.write(f"--- scene {i} ---\n{p}\n\n")
             paths = image_gen.generate(prov["id"], prompts, out, keys, log=log)
         except httpx.HTTPStatusError as e:
             code = e.response.status_code
@@ -139,7 +146,7 @@ def run_stage(key, project, log, keys=None, artifacts=None):
         except Exception as e:
             log(f"[failed] image generation error: {str(e)[:140]}")
             return {"images": None, "images_status": "error"}
-        return {"images": out, "image_count": len(paths)}
+        return {"images": out, "image_count": len(paths), "scene_prompts": prompts}
 
     if key == "captions":                      # REAL — pure Python, no key
         text = artifacts.get("script")

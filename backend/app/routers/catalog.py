@@ -20,5 +20,6 @@ def styles():
 
 @router.get("/providers")
 def providers():
-    """Image + voice engines the user can pick per project. free=true needs no key."""
-    return {"image": catalog.IMAGE_PROVIDERS, "audio": catalog.AUDIO_PROVIDERS}
+    """Image + voice engines + Claude models the user can pick per project."""
+    return {"image": catalog.IMAGE_PROVIDERS, "audio": catalog.AUDIO_PROVIDERS,
+            "llm": catalog.LLM_MODELS}

@@ -12,20 +12,27 @@ import json, re, httpx
 API = "https://api.anthropic.com/v1/messages"
 MODEL = "claude-sonnet-5"
 
-_SYSTEM = """You convert a narrated story into image-generation scenes for an \
-illustrated video, keeping characters visually consistent across scenes.
+_SYSTEM = """You are a cinematographer turning a narrated story into vivid, varied \
+image-generation scenes for an illustrated video. Keep characters visually consistent \
+across scenes, and make each shot cinematic.
 
 Return ONLY a JSON object with two keys:
-"characters": object mapping a STABLE UPPERCASE_SNAKE key to a fixed English visual \
-description (age, build, hair, face, clothing, demeanour). Every person appearing in \
-more than one scene MUST have an entry. Descriptions are reused verbatim, so make them \
-complete. Do NOT include the art style — that is added separately.
-"scenes": an array, in story order, each: { "chars": [character keys present, [] if none], \
-"action": "a concise ENGLISH description of what this shot shows" }.
-Rules: English only for all descriptions and actions, whatever the story's language. \
-Produce EXACTLY the requested number of scenes, covering the whole story in order. \
-One-off background people may be described inline in "action" with chars []. \
-Never put text, letters or signage in a scene."""
+"characters": object mapping a STABLE UPPERCASE_SNAKE key to a fixed, detailed English \
+visual description (age, build, hair, face, distinguishing features, exact clothing, \
+demeanour). Every person appearing in more than one scene MUST have an entry, and the \
+description is reused VERBATIM every time, so make it complete and specific enough that \
+the same person is recognisable. Do NOT include the art style — that is added separately.
+"scenes": an array, in story order, each: { "chars": [character keys present in this \
+shot, in order; [] if none], "action": "a concise but vivid ENGLISH description of the \
+shot" }.
+Make the "action" cinematic and specific: name the SHOT TYPE (wide establishing, medium, \
+close-up, over-the-shoulder), the characters' POSE and EXPRESSION and what they are DOING, \
+their SPATIAL relationship in multi-character scenes (who is left/right, foreground/back), \
+the SETTING and TIME OF DAY, and the LIGHTING and MOOD. Vary the shot types across scenes. \
+Put the right people in each shot via "chars" (2+ keys for multi-character scenes).
+Rules: English only, whatever the story's language. Produce EXACTLY the requested number \
+of scenes, covering the whole story in order. One-off background people may be described \
+inline in "action" with chars []. Never depict text, letters, captions or signage."""
 
 
 def _parse(text):
@@ -38,14 +45,15 @@ def _parse(text):
     return json.loads(text[i:j + 1])
 
 
-def build_scene_prompts(script, language, style_prefix, n_scenes, api_key, log=lambda m: None):
+def build_scene_prompts(script, language, style_prefix, n_scenes, api_key,
+                        log=lambda m: None, model=MODEL):
     user = (f"Story language: {language}. Break this story into EXACTLY {n_scenes} scenes.\n\n"
             f"STORY:\n{script}\n\nReturn the JSON now.")
     body = json.dumps({
-        "model": MODEL, "max_tokens": 8000, "system": _SYSTEM,
+        "model": model, "max_tokens": 8000, "system": _SYSTEM,
         "messages": [{"role": "user", "content": user}],
     }).encode()
-    log(f"planning {n_scenes} scenes with consistent characters (Claude)")
+    log(f"planning {n_scenes} cinematic scenes with consistent characters ({model})")
     with httpx.Client(timeout=180) as c:
         r = c.post(API, content=body, headers={
             "x-api-key": api_key, "anthropic-version": "2023-06-01",

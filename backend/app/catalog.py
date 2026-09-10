@@ -70,6 +70,20 @@ AUDIO_PROVIDERS = [
     {"id": "elevenlabs", "name": "ElevenLabs",         "key": "elevenlabs", "free": False},
 ]
 
+# Claude models for analysis / script / scene direction (needs the user's Anthropic key).
+LLM_MODELS = [
+    {"id": "claude-sonnet-5", "name": "Claude Sonnet 5 (balanced)"},
+    {"id": "claude-opus-5", "name": "Claude Opus 5 (best quality)"},
+    {"id": "claude-haiku-4-5-20251001", "name": "Claude Haiku 4.5 (fast, cheap)"},
+]
+_DEFAULT_LLM = "claude-sonnet-5"
+
+
+def llm_model(mid):
+    ids = {m["id"] for m in LLM_MODELS}
+    return mid if mid in ids else _DEFAULT_LLM
+
+
 _STYLE_BY_ID = {s["id"]: s for s in STYLE_PRESETS}
 _LANG_BY_CODE = {l["code"]: l for l in LANGUAGES}
 _IMG_BY_ID = {p["id"]: p for p in IMAGE_PROVIDERS}

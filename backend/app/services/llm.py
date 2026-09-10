@@ -13,7 +13,7 @@ _LANG_NAMES = {"en": "English", "es": "Spanish", "fr": "French", "de": "German",
                "sv": "Swedish", "id": "Indonesian"}
 
 
-def generate_script(profile, language, length_words, api_key, log=lambda m: None):
+def generate_script(profile, language, length_words, api_key, log=lambda m: None, model=MODEL):
     lang = _LANG_NAMES.get(language, language)
     kws = ", ".join(profile.get("top_keywords", [])[:10]) or "(none)"
     samples = "\n".join("- " + t for t in profile.get("sample_titles", [])[:8])
@@ -32,10 +32,10 @@ def generate_script(profile, language, length_words, api_key, log=lambda m: None
         f"point, and a resonant ending."
     )
     body = json.dumps({
-        "model": MODEL, "max_tokens": min(8000, int(length_words * 2.2) + 500),
+        "model": model, "max_tokens": min(8000, int(length_words * 2.2) + 500),
         "system": system, "messages": [{"role": "user", "content": user}],
     }).encode()
-    log(f"calling Claude ({MODEL}) for a ~{length_words}-word script in {lang}")
+    log(f"calling Claude ({model}) for a ~{length_words}-word script in {lang}")
     with httpx.Client(timeout=180) as c:
         r = c.post(API, content=body, headers={
             "x-api-key": api_key, "anthropic-version": "2023-06-01",
