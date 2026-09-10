@@ -8,7 +8,7 @@ _SCHEMA = """
 CREATE TABLE IF NOT EXISTS projects (
   id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT,
   channel_url TEXT, language TEXT, style_id TEXT, style_custom TEXT,
-  voice_id TEXT, image_provider TEXT, audio_provider TEXT,
+  voice_id TEXT, image_provider TEXT, audio_provider TEXT, last_job_id TEXT,
   length_words INTEGER, status TEXT DEFAULT 'draft',
   created_at REAL, updated_at REAL
 );
@@ -44,7 +44,8 @@ def init_db():
         # lightweight migrations for dev DBs created before a column existed
         for tbl, col, decl in [("projects", "voice_id", "TEXT"),
                                ("projects", "image_provider", "TEXT"),
-                               ("projects", "audio_provider", "TEXT")]:
+                               ("projects", "audio_provider", "TEXT"),
+                               ("projects", "last_job_id", "TEXT")]:
             try:
                 c.execute(f"ALTER TABLE {tbl} ADD COLUMN {col} {decl}")
             except sqlite3.OperationalError:

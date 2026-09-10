@@ -235,6 +235,9 @@ async function selectProject(pid){
     <div style="padding:14px 20px"><button class="btn slate" id="genBtn" onclick="generate('${pid}')">▶ Generate video</button></div>
     <div class="console"><div class="b"><span id="cstat">idle</span></div><pre id="log">Add your keys (top-right), then Generate. Watch progress here.</pre></div>
     <div class="arts" id="arts"></div>`;
+  if(p.last_job_id){ try{ const j=await api("/jobs/"+p.last_job_id); applyJob(pid,j);
+    if(j.status==="running"||j.status==="queued") poll(pid,p.last_job_id);
+  }catch(err){} }
 }
 
 async function generate(pid){
@@ -244,21 +247,23 @@ async function generate(pid){
   catch(e){ alert(e.detail||"Could not start"); document.getElementById("genBtn").disabled=false; }
 }
 
+function applyJob(pid,j){
+  const log=document.getElementById("log"); if(log){log.textContent=(j.log&&j.log.length)?j.log.join("\n"):"(no output yet)";log.scrollTop=log.scrollHeight;}
+  const bar=document.getElementById("bar"); if(bar) bar.style.width=Math.round((j.progress||0)*100)+"%";
+  const cs=document.getElementById("cstat"); if(cs) cs.textContent = j.status==="running"?("running — "+(j.stage||"")):j.status;
+  STAGES.forEach(([k,l])=>{ const el=document.getElementById("stg-"+k); if(!el)return;
+    const started=(j.log||[]).some(x=>x.includes("=== "+l)); const done=(j.progress||0)>=(STAGES.findIndex(s=>s[0]===k)+1)/STAGES.length-0.001;
+    el.className="stg"+(j.status==="error"&&started?" err":done?" done":started?" run":""); });
+  if(j.status==="done"||j.status==="error"){ if(j.artifacts) showArts(pid,j.artifacts); }
+}
 function poll(pid,jid){
   if(POLL) clearInterval(POLL);
   const tick=async()=>{
-    const j=await api("/jobs/"+jid);
-    const log=document.getElementById("log"); if(log){log.textContent=j.log.join("\n")||"(starting)";log.scrollTop=log.scrollHeight;}
-    document.getElementById("bar").style.width=Math.round((j.progress||0)*100)+"%";
-    document.getElementById("cstat").textContent = j.status==="running"?("running — "+(j.stage||"")):j.status;
-    // stage lights from log markers
-    STAGES.forEach(([k,l])=>{ const el=document.getElementById("stg-"+k); if(!el)return;
-      const started=j.log.some(x=>x.includes("=== "+l)); const done=j.progress>=(STAGES.findIndex(s=>s[0]===k)+1)/STAGES.length-0.001;
-      el.className="stg"+(j.status==="error"&&started?" err":done?" done":started?" run":""); });
-    if(j.status!=="running" && (j.status==="done"||j.status==="error")){
+    const j=await api("/jobs/"+jid); applyJob(pid,j);
+    if(j.status==="done"||j.status==="error"){
       clearInterval(POLL); POLL=null;
       const gb=document.getElementById("genBtn"); if(gb) gb.disabled=false;
-      showArts(pid,j.artifacts); loadProjects();
+      loadProjects();
     }
   };
   POLL=setInterval(tick,1200); tick();
@@ -267,8 +272,8 @@ function poll(pid,jid){
 function showArts(pid,a){
   const el=document.getElementById("arts"); if(!el)return; el.innerHTML="";
   const any = a.script||a.audio||a.video||a.thumbnail||a.srt||a.image_count;
-  const add=(label,fname,strong)=>{ const d=document.createElement("a"); d.className="art"+(strong?" strong":""); d.href="/projects/"+pid+"/file?name="+encodeURIComponent(fname); d.target="_blank"; d.textContent="⬇ "+label; el.appendChild(d); };
-  if(any){ const z=document.createElement("a"); z.className="art strong"; z.href="/projects/"+pid+"/zip"; z.textContent="⬇ Download all (ZIP)"; el.appendChild(z); }
+  const add=(label,fname,strong)=>{ const d=document.createElement("a"); d.className="art"+(strong?" strong":""); d.href="/projects/"+pid+"/file?name="+encodeURIComponent(fname)+"&uid="+encodeURIComponent(UID); d.target="_blank"; d.textContent="⬇ "+label; el.appendChild(d); };
+  if(any){ const z=document.createElement("a"); z.className="art strong"; z.href="/projects/"+pid+"/zip?uid="+encodeURIComponent(UID); z.textContent="⬇ Download all (ZIP)"; el.appendChild(z); }
   if(a.video) add("Video (mp4)","video.mp4");
   if(a.thumbnail) add("Thumbnail","thumbnail.jpg");
   if(a.audio) add("Narration (mp3)","narration.mp3");

@@ -30,7 +30,7 @@ def create_job(project):
         "log": "[]", "error": None, "artifacts": "{}",
         "created_at": db.now(), "updated_at": db.now(),
     })
-    db.update("projects", project["id"], {"status": "running"})
+    db.update("projects", project["id"], {"status": "running", "last_job_id": jid})
     threading.Thread(target=_run, args=(jid,), daemon=True).start()
     return jid
 
