@@ -100,8 +100,8 @@ def run_stage(key, project, log, keys=None, artifacts=None):
             return {"audio": None, "audio_status": "needs_voice_id"}
         out = os.path.join(_project_out(project), "narration.mp3")
         try:
-            path, nbytes = tts.synthesize(prov["id"], text, project.get("voice_id"),
-                                          lang, keys, out, log=log)
+            path, nbytes, segs = tts.synthesize(prov["id"], text, project.get("voice_id"),
+                                                 lang, keys, out, log=log)
         except httpx.HTTPStatusError as e:
             code = e.response.status_code
             log(f"[failed] {prov['name']} returned {code} — check the key/voice or try a free engine")
@@ -110,7 +110,7 @@ def run_stage(key, project, log, keys=None, artifacts=None):
             log(f"[failed] narration error: {str(e)[:140]}")
             return {"audio": None, "audio_status": "audio_error"}
         log(f"narration saved: {nbytes/1000:.0f} KB -> {os.path.basename(path)}")
-        return {"audio": path, "audio_bytes": nbytes}
+        return {"audio": path, "audio_bytes": nbytes, "caption_segments": segs or None}
 
     if key == "images":                        # REAL — provider-dispatched image gen
         script = artifacts.get("script")
@@ -146,14 +146,19 @@ def run_stage(key, project, log, keys=None, artifacts=None):
         if not text:
             log("[skipped] no script text to caption")
             return {"captions": None, "captions_status": "no_script"}
-        audio = artifacts.get("audio")
-        dur = captions_svc.audio_duration(audio)
-        if dur:
-            log(f"using real audio duration: {dur:.0f}s")
+        segs = artifacts.get("caption_segments")
+        if segs:
+            log(f"using {len(segs)} real voice segments — captions locked to the audio")
+            res = captions_svc.build_from_segments(segs, _project_out(project), log=log)
         else:
-            dur = max(1.0, len(text.split()) / captions_svc.WPM_ESTIMATE * 60.0)
-            log(f"no audio yet — estimating {dur:.0f}s from word count")
-        res = captions_svc.build_captions(text, dur, _project_out(project), log=log)
+            audio = artifacts.get("audio")
+            dur = captions_svc.audio_duration(audio)
+            if dur:
+                log(f"using real audio duration: {dur:.0f}s (estimated word pacing)")
+            else:
+                dur = max(1.0, len(text.split()) / captions_svc.WPM_ESTIMATE * 60.0)
+                log(f"no audio yet — estimating {dur:.0f}s from word count")
+            res = captions_svc.build_captions(text, dur, _project_out(project), log=log)
         return {"captions_json": res["captions_json"], "srt": res["srt"],
                 "caption_words": res["words"], "srt_cues": res["srt_cues"]}
 

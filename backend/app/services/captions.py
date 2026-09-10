@@ -38,12 +38,11 @@ def _srt_ts(ms):
 
 
 def build_captions(text, duration_s, out_dir, label="video", log=lambda m: None):
-    os.makedirs(out_dir, exist_ok=True)
+    """Estimated timing: spread words across the audio proportionally (fallback)."""
     words = [w for w in re.split(r"\s+", text.strip()) if w]
     weights = [len(w) + 1 for w in words]
     total = sum(weights) or 1
     dur_ms = duration_s * 1000.0
-
     caps, t = [], 0.0
     for w, wt in zip(words, weights):
         span = dur_ms * wt / total
@@ -51,12 +50,38 @@ def build_captions(text, duration_s, out_dir, label="video", log=lambda m: None)
         caps.append({"text": " " + w, "startMs": start, "endMs": end,
                      "timestampMs": (start + end) // 2, "confidence": 1})
         t += span
+    return _write(caps, out_dir, label, log)
 
+
+def build_from_segments(segments, out_dir, label="video", log=lambda m: None):
+    """Timing from real voice boundaries [{text,startMs,endMs}] (sentence- or
+    word-level). Each segment's words are distributed across its real time window,
+    so captions stay locked to the voice."""
+    caps = []
+    for seg in segments:
+        st, en = int(seg["startMs"]), int(seg["endMs"])
+        words = [w for w in re.split(r"\s+", (seg.get("text") or "").strip()) if w]
+        if not words:
+            continue
+        if en <= st:
+            en = st + 300 * len(words)
+        weights = [len(w) + 1 for w in words]
+        total = sum(weights) or 1
+        span = en - st
+        t = float(st)
+        for w, wt in zip(words, weights):
+            ws, we = t, t + span * wt / total
+            caps.append({"text": " " + w, "startMs": int(ws), "endMs": int(we),
+                         "timestampMs": int((ws + we) // 2), "confidence": 1})
+            t = we
+    return _write(caps, out_dir, label, log)
+
+
+def _write(caps, out_dir, label, log):
+    os.makedirs(out_dir, exist_ok=True)
     cj = os.path.join(out_dir, "captions.json")
     with open(cj, "w", encoding="utf-8") as f:
         json.dump(caps, f, ensure_ascii=False)
-
-    # group words into readable lines (sentence-end / <=8 words / <=4.5s)
     lines, cur, cur_start = [], [], None
     for c in caps:
         w = c["text"].strip()
@@ -67,12 +92,10 @@ def build_captions(text, duration_s, out_dir, label="video", log=lambda m: None)
             lines.append((cur_start, c["endMs"], " ".join(cur)))
             cur, cur_start = [], None
     if cur:
-        lines.append((cur_start, caps[-1]["endMs"], " ".join(cur)))
-
+        lines.append((cur_start, caps[-1]["endMs"] if caps else 0, " ".join(cur)))
     srt = os.path.join(out_dir, f"{label}.srt")
     with open(srt, "w", encoding="utf-8") as f:
         for i, (st, en, tx) in enumerate(lines, 1):
             f.write(f"{i}\n{_srt_ts(st)} --> {_srt_ts(en)}\n{tx}\n\n")
-
-    log(f"captions: {len(caps)} words over {duration_s:.0f}s -> {len(lines)} subtitle cues")
+    log(f"captions: {len(caps)} words -> {len(lines)} subtitle cues")
     return {"captions_json": cj, "srt": srt, "words": len(caps), "srt_cues": len(lines)}

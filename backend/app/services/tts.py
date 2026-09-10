@@ -21,24 +21,40 @@ _EDGE_DEFAULT = {
 
 
 def synthesize(provider, text, voice, language, keys, out_path, log=lambda m: None):
+    """Returns (path, bytes, word_timings). word_timings is a list of
+    {text,startMs,endMs} when the provider reports them (Edge), else None."""
     if provider == "edge":
         return _edge(text, voice or _EDGE_DEFAULT.get(language, "en-US-GuyNeural"), out_path, log)
     if provider == "openai":
-        return _openai(text, voice or "onyx", keys["openai"], out_path, log)
+        p, n = _openai(text, voice or "onyx", keys["openai"], out_path, log)
+        return p, n, None
     if provider == "elevenlabs":
-        return _eleven(text, voice, keys["elevenlabs"], out_path, log)
-    return synthesize_fish(text, voice, keys["fish"], out_path, log=log)
+        p, n = _eleven(text, voice, keys["elevenlabs"], out_path, log)
+        return p, n, None
+    p, n = synthesize_fish(text, voice, keys["fish"], out_path, log=log)
+    return p, n, None
 
 
 def _edge(text, voice, out_path, log):
-    import edge_tts
+    """Stream Edge audio AND capture real boundary timings (sentence- or word-level)
+    for captions that lock to the voice."""
+    import edge_tts, os
     log(f"Edge TTS (free): {len(text)} chars, voice {voice}")
+    segs = []
 
     async def _run():
-        await edge_tts.Communicate(text, voice).save(out_path)
+        comm = edge_tts.Communicate(text, voice)
+        with open(out_path, "wb") as f:
+            async for ch in comm.stream():
+                if ch.get("type") == "audio":
+                    f.write(ch["data"])
+                elif ch.get("type") in ("SentenceBoundary", "WordBoundary"):
+                    st = int(ch["offset"] / 10000)                 # 100ns → ms
+                    en = int((ch["offset"] + ch["duration"]) / 10000)
+                    segs.append({"text": ch.get("text", ""), "startMs": st, "endMs": en})
     asyncio.run(_run())
-    import os
-    return out_path, os.path.getsize(out_path)
+    log(f"captured {len(segs)} timed segments from the voice")
+    return out_path, os.path.getsize(out_path), segs
 
 
 def _openai(text, voice, key, out_path, log):

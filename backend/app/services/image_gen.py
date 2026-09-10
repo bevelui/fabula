@@ -57,24 +57,47 @@ def _gemini(prompt, out_path, key):
     raise RuntimeError("no image in Gemini response")
 
 
-def generate(provider, prompts, out_dir, keys, log=lambda m: None):
+def _retryable(e):
+    """Transient errors worth a retry (server hiccups, rate limits, network/timeouts).
+    Auth/config errors (400/401/403/404) are not retried."""
+    if isinstance(e, httpx.HTTPStatusError):
+        return e.response.status_code in (408, 425, 429, 500, 502, 503, 504)
+    return True
+
+
+def _one(provider, prompt, out, keys):
+    if provider == "pollinations":
+        _pollinations(prompt, out)
+    elif provider == "openai":
+        _openai(prompt, out, keys["openai"])
+    else:
+        _gemini(prompt, out, keys["gemini"])
+
+
+def generate(provider, prompts, out_dir, keys, log=lambda m: None, tries=3):
     os.makedirs(out_dir, exist_ok=True)
     paths, failed = [], 0
     for i, prompt in enumerate(prompts, 1):
         out = os.path.join(out_dir, f"img-{i:03d}.jpg")
-        try:
-            if provider == "pollinations":
-                _pollinations(prompt, out)
-            elif provider == "openai":
-                _openai(prompt, out, keys["openai"])
-            else:
-                _gemini(prompt, out, keys["gemini"])
-            paths.append(out)
-        except Exception as e:
+        last = None
+        for attempt in range(1, tries + 1):
+            try:
+                _one(provider, prompt, out, keys)
+                paths.append(out)
+                last = None
+                break
+            except Exception as e:
+                last = e
+                if attempt < tries and _retryable(e):
+                    log(f"  img-{i:03d} attempt {attempt} failed ({str(e)[:60]}) — retrying")
+                    time.sleep(1.5 * attempt)
+                else:
+                    break
+        if last is not None:
             failed += 1
-            log(f"  img-{i:03d} failed: {str(e)[:90]}")
+            log(f"  img-{i:03d} failed after {tries} tries: {str(last)[:80]}")
             if i == 1:                      # first frame failing = key/quota → stop early
-                raise
+                raise last
         time.sleep(0.2)
     log(f"images ({provider}): {len(paths)} ok, {failed} failed")
     return paths

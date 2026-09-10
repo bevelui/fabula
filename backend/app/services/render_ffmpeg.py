@@ -14,7 +14,7 @@ FPS = 30
 # 720p by default so it fits small instances; set FABULA_VIDEO_HEIGHT=1080 on a bigger box.
 H = int(_os.environ.get("FABULA_VIDEO_HEIGHT", "720"))
 W = (H * 16 // 9) // 2 * 2
-_UP = (W * 13 // 10) // 2 * 2                    # light Ken Burns upscale (~1.3x)
+_UP = (W * 5 // 2) // 2 * 2                       # ~2.5x supersample -> much less jitter
 SUB_STYLE = ("FontName=DejaVu Serif,Fontsize=18,PrimaryColour=&H00FFFFFF&,"
              "OutlineColour=&H00201810&,BorderStyle=1,Outline=2,Shadow=0,"
              "Alignment=2,MarginV=48")
@@ -51,7 +51,7 @@ def render_video(images_dir, audio_path, srt_path, out_path, log=lambda m: None)
             d = max(2, d)
             clip = os.path.join(work, f"clip_{i:03d}.mp4")
             # light upscale + gentle zoom; ultrafast = lowest memory
-            zoom = (f"scale={_UP}:-2,zoompan=z='min(zoom+0.0006,1.18)':"
+            zoom = (f"scale={_UP}:-2,zoompan=z='min(zoom+0.00035,1.12)':"
                     f"d={d}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={W}x{H}:fps={FPS},"
                     "format=yuv420p")
             _run([ff, "-y", "-loglevel", "error", "-threads", "1", "-loop", "1", "-i", img,
@@ -70,13 +70,18 @@ def render_video(images_dir, audio_path, srt_path, out_path, log=lambda m: None)
               "-i", listf, "-c", "copy", silent])
 
         # burn subtitles (relative path, cwd=work → avoids Windows drive-colon escaping)
-        shutil.copyfile(srt_path, os.path.join(work, "subs.srt"))
         final = os.path.join(work, "final.mp4")
-        _run([ff, "-y", "-loglevel", "error", "-threads", "1", "-i", silent, "-i", audio_path,
-              "-vf", f"subtitles=subs.srt:force_style='{SUB_STYLE}'",
-              "-c:v", "libx264", "-preset", "ultrafast", "-crf", "23",
-              "-c:a", "aac", "-b:a", "160k", "-shortest",
-              "-map", "0:v:0", "-map", "1:a:0", final], cwd=work)
+        cmd = [ff, "-y", "-loglevel", "error", "-threads", "1", "-i", silent, "-i", audio_path]
+        has_subs = os.path.exists(srt_path) and os.path.getsize(srt_path) > 8
+        if has_subs:
+            shutil.copyfile(srt_path, os.path.join(work, "subs.srt"))
+            cmd += ["-vf", f"subtitles=subs.srt:force_style='{SUB_STYLE}'"]
+        else:
+            log("no captions to burn — rendering without subtitles")
+        cmd += ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "23",
+                "-c:a", "aac", "-b:a", "160k", "-shortest",
+                "-map", "0:v:0", "-map", "1:a:0", final]
+        _run(cmd, cwd=work)
 
         os.makedirs(os.path.dirname(out_path), exist_ok=True)
         shutil.copyfile(final, out_path)
