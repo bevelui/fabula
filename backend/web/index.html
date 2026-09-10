@@ -51,6 +51,13 @@
     background:var(--raise);color:var(--ink)}
   textarea.t{resize:vertical;min-height:56px}
   .row{display:flex;gap:10px}.row>*{flex:1}
+  .fmttabs{display:flex;gap:6px;margin-bottom:14px}
+  .fmttabs .fmt{flex:1;border:1px solid var(--line);background:var(--surface);color:var(--muted);
+    padding:9px;border-radius:9px;font-size:13px;font-weight:600;cursor:pointer}
+  .fmttabs .fmt.on{background:var(--slate);color:#fff;border-color:var(--slate)}
+  .fmttabs .src{flex:1;border:1px solid var(--line);background:var(--surface);color:var(--muted);
+    padding:9px;border-radius:9px;font-size:12.5px;font-weight:600;cursor:pointer}
+  .fmttabs .src.on{background:var(--ochre);color:#fff;border-color:var(--ochre)}
   .btn{background:var(--ochre);border:1px solid var(--ochre);color:#fff;font-weight:600;padding:10px 16px;
     border-radius:9px;font-size:14px;width:100%}
   .btn:hover{background:#9a6d2f}
@@ -117,8 +124,28 @@
     <div class="card">
       <h2>New project</h2>
       <div class="pad">
-        <label class="f">YouTube channel to learn from</label>
-        <input class="t" id="chan" placeholder="https://youtube.com/@channel">
+        <div class="fmttabs">
+          <button type="button" class="fmt on" data-f="long" onclick="setFmt('long')">🎬 Long video</button>
+          <button type="button" class="fmt" data-f="short" onclick="setFmt('short')">📱 Short</button>
+        </div>
+        <div class="fmttabs">
+          <button type="button" class="src on" data-s="channel" onclick="setSrc('channel')">📺 From a channel</button>
+          <button type="button" class="src" data-s="own" onclick="setSrc('own')">📝 My own script</button>
+        </div>
+        <div id="channelWrap">
+          <label class="f">YouTube channel to learn from</label>
+          <input class="t" id="chan" placeholder="https://youtube.com/@channel">
+        </div>
+        <div id="ownWrap" hidden>
+          <label class="f">Your script</label>
+          <textarea class="t" id="userScript" rows="5" placeholder="Paste your full script here…"></textarea>
+          <label class="f">What to do with it</label>
+          <select class="t" id="scriptMode">
+            <option value="asis">Use it exactly as-is (free)</option>
+            <option value="polish">Polish &amp; improve it (uses Claude)</option>
+            <option value="reference">Write a NEW script in this style (uses Claude)</option>
+          </select>
+        </div>
         <div class="row">
           <div><label class="f">Language</label><select class="t" id="lang"></select></div>
           <div><label class="f">Art style</label><select class="t" id="style"></select></div>
@@ -139,8 +166,10 @@
           <input class="t" id="sceneCustom" placeholder="e.g. claude-opus-4-1-…"></div>
         <div class="row">
           <div><label class="f">Length (words)</label><input class="t" id="len" type="number" value="1200" min="100" max="8000"></div>
-          <div><label class="f">Voice id (Fish/11Labs)</label><input class="t" id="voice" placeholder="optional for free voices"></div>
+          <div><label class="f">Number of images</label><input class="t" id="numimg" type="number" value="0" min="0" max="200" placeholder="0 = auto (~1 / 5 sec)"></div>
         </div>
+        <label class="f">Voice id (Fish/11Labs)</label>
+        <input class="t" id="voice" placeholder="optional for free voices">
         <label class="f">Title (used on the thumbnail)</label>
         <input class="t" id="title" placeholder="Optional">
         <div style="margin-top:14px"><button class="btn" onclick="createProject()">Create project</button></div>
@@ -168,7 +197,9 @@
     <b>Claude</b> = script + scene planning · <b>Fish</b> = narration · <b>Gemini</b> = images.</p>
   <div id="keyList"></div>
   <label class="f">Provider</label>
-  <select class="t" id="kp"><option value="anthropic">Claude (anthropic)</option><option value="fish">Fish Audio</option><option value="gemini">Gemini</option><option value="openai">OpenAI</option><option value="elevenlabs">ElevenLabs</option></select>
+  <select class="t" id="kp" onchange="document.getElementById('kpCustomWrap').hidden=this.value!=='custom'"><option value="anthropic">Claude (anthropic)</option><option value="fish">Fish Audio</option><option value="gemini">Gemini</option><option value="openai">OpenAI</option><option value="elevenlabs">ElevenLabs</option><option value="custom">Other platform (name it)…</option></select>
+  <div id="kpCustomWrap" hidden><label class="f">Platform name</label>
+    <input class="t" id="kpCustom" placeholder="e.g. stability, luma, playht — lowercase, no spaces"></div>
   <label class="f">API key</label>
   <input class="t" id="kv" type="password" placeholder="paste key">
   <div style="margin-top:12px"><button class="btn slate" onclick="saveKey()">Save key</button></div>
@@ -190,7 +221,16 @@ const UID = (()=>{ let u=localStorage.getItem("fabula_uid"); if(!u){u="u_"+Math.
 const H = {"X-User-Id":UID,"Content-Type":"application/json"};
 const api = (p,opt={})=>fetch(p,{headers:H,...opt}).then(r=>r.ok?r.json():r.json().then(e=>Promise.reject(e)));
 const STAGES = [["analyze","Analyze"],["script","Script"],["audio","Narration"],["images","Images"],["captions","Captions"],["video","Video"],["thumbnail","Thumbnail"]];
-let CUR=null, POLL=null;
+let CUR=null, POLL=null, FORMAT="long", SRC="channel";
+function setFmt(f){ FORMAT=f;
+  document.querySelectorAll(".fmttabs .fmt").forEach(b=>b.classList.toggle("on", b.dataset.f===f));
+  const len=document.getElementById("len"); if(len) len.value = f==="short" ? 180 : 1200;
+}
+function setSrc(s){ SRC=s;
+  document.querySelectorAll(".fmttabs .src").forEach(b=>b.classList.toggle("on", b.dataset.s===s));
+  document.getElementById("channelWrap").hidden = s!=="channel";
+  document.getElementById("ownWrap").hidden = s!=="own";
+}
 
 async function init(){
   const [langs,styles,provs] = await Promise.all([api("/catalog/languages"),api("/catalog/styles"),api("/catalog/providers")]);
@@ -224,13 +264,16 @@ async function loadProjects(){
 }
 
 async function createProject(){
-  const body={ channel_url:val("chan"), language:val("lang"), style_id:val("style"),
+  const body={ channel_url:val("chan"), format:FORMAT, language:val("lang"), style_id:val("style"),
     style_custom: val("style")==="custom"?val("styleCustom"):null,
+    script_source:SRC, user_script: SRC==="own"?val("userScript"):null, script_mode:val("scriptMode"),
     image_provider:val("imgprov"), audio_provider:val("audprov"),
     script_model:val("scriptmodel"), script_model_custom: val("scriptmodel")==="custom"?val("scriptCustom"):null,
     scene_model:val("scenemodel"), scene_model_custom: val("scenemodel")==="custom"?val("sceneCustom"):null,
-    length_words:parseInt(val("len"))||1200, voice_id:val("voice")||null, title:val("title")||null };
-  if(!body.channel_url){ alert("Add a channel URL"); return; }
+    length_words:parseInt(val("len"))||1200, num_images:parseInt(val("numimg"))||0,
+    voice_id:val("voice")||null, title:val("title")||null };
+  if(SRC==="channel" && !body.channel_url){ alert("Add a channel URL"); return; }
+  if(SRC==="own" && !body.user_script){ alert("Paste your script"); return; }
   try{ const p=await api("/projects",{method:"POST",body:JSON.stringify(body)});
     document.getElementById("chan").value=""; document.getElementById("title").value="";
     await loadProjects(); selectProject(p.id);
@@ -243,7 +286,7 @@ async function selectProject(pid){
   const stages = STAGES.map(([k,l])=>`<div class="stg" id="stg-${k}"><span class="d"></span>${l}</div>`).join("");
   document.getElementById("detail").innerHTML=`
     <div class="dh"><div class="t">${p.title||"Untitled"}</div>
-      <div class="m">${p.channel_url||""} · ${p.language} · ${p.style_id}${p.style_custom?(' ('+p.style_custom+')'):''} · ~${p.length_words} words</div></div>
+      <div class="m">${p.format==='short'?'📱 Short':'🎬 Long'} · ${p.channel_url||""} · ${p.language} · ${p.style_id}${p.style_custom?(' ('+p.style_custom+')'):''} · ~${p.length_words} words</div></div>
     <div class="stages">${stages}</div>
     <div class="bar"><i id="bar"></i></div>
     <div style="padding:14px 20px"><button class="btn slate" id="genBtn" onclick="generate('${pid}')">▶ Generate video</button></div>
@@ -309,8 +352,10 @@ async function openKeys(){ document.getElementById("ovKeys").classList.add("on")
   const el=document.getElementById("keyList"); el.innerHTML = ks.length?"":'<p class="note">No keys yet.</p>';
   ks.forEach(k=>{ const d=document.createElement("div"); d.className="krow";
     d.innerHTML=`<span class="kn">${k.provider}</span><span class="kh">${k.hint}</span>`; el.appendChild(d); }); }
-async function saveKey(){ const provider=val("kp"), api_key=val("kv"); if(!api_key){alert("Paste a key");return;}
-  await api("/keys",{method:"POST",body:JSON.stringify({provider,api_key})}); document.getElementById("kv").value=""; openKeys(); }
+async function saveKey(){ let provider=val("kp"); const api_key=val("kv");
+  if(provider==="custom"){ provider=val("kpCustom").toLowerCase().replace(/\s+/g,""); if(!provider){alert("Name the platform");return;} }
+  if(!api_key){alert("Paste a key");return;}
+  await api("/keys",{method:"POST",body:JSON.stringify({provider,api_key})}); document.getElementById("kv").value=""; document.getElementById("kpCustom").value=""; openKeys(); }
 
 // feedback
 function openFb(){ document.getElementById("ovFb").classList.add("on"); }

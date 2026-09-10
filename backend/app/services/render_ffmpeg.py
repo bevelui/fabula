@@ -30,8 +30,10 @@ def _run(cmd, cwd=None):
         raise RuntimeError(f"ffmpeg rc={r.returncode}{note}: {tail}")
 
 
-def render_video(images_dir, audio_path, srt_path, out_path, log=lambda m: None):
+def render_video(images_dir, audio_path, srt_path, out_path, log=lambda m: None, size=None):
     ff = settings.FFMPEG
+    W, H = size if size else (globals()["W"], globals()["H"])   # per-format dimensions
+    UP = (W * 5 // 2) // 2 * 2                                   # 2.5x supersample
     frames = sorted(glob.glob(os.path.join(images_dir, "img-*.jpg")))
     if not frames:
         raise RuntimeError(f"no images in {images_dir}")
@@ -51,7 +53,7 @@ def render_video(images_dir, audio_path, srt_path, out_path, log=lambda m: None)
             d = max(2, d)
             clip = os.path.join(work, f"clip_{i:03d}.mp4")
             # light upscale + gentle zoom; ultrafast = lowest memory
-            zoom = (f"scale={_UP}:-2,zoompan=z='min(zoom+0.00022,1.09)':"
+            zoom = (f"scale={UP}:-2,zoompan=z='min(zoom+0.00022,1.09)':"
                     f"d={d}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={W}x{H}:fps={FPS},"
                     "format=yuv420p")
             _run([ff, "-y", "-loglevel", "error", "-threads", "1", "-loop", "1", "-i", img,

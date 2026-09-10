@@ -20,21 +20,22 @@ def _save(path, data):
         f.write(data)
 
 
-def _pollinations(prompt, out_path):
+def _pollinations(prompt, out_path, w, h):
     p = prompt[:900]                                   # keep the URL sane
     url = "https://image.pollinations.ai/prompt/" + urllib.parse.quote(p)
-    r = httpx.get(url, params={"width": 1536, "height": 864, "nologo": "true",
+    r = httpx.get(url, params={"width": w, "height": h, "nologo": "true",
                                "model": "flux", "seed": random.randint(1, 10**9)},
                   timeout=180, follow_redirects=True)
     r.raise_for_status()
     _save(out_path, r.content)
 
 
-def _openai(prompt, out_path, key):
+def _openai(prompt, out_path, key, w, h):
+    size = "1024x1536" if h > w else ("1536x1024" if w > h else "1024x1024")
     r = httpx.post("https://api.openai.com/v1/images/generations",
                    headers={"Authorization": f"Bearer {key}"},
                    json={"model": "gpt-image-1", "prompt": prompt[:4000],
-                         "size": "1536x1024", "n": 1}, timeout=180)
+                         "size": size, "n": 1}, timeout=180)
     r.raise_for_status()
     d = r.json()["data"][0]
     if d.get("b64_json"):
@@ -65,16 +66,22 @@ def _retryable(e):
     return True
 
 
-def _one(provider, prompt, out, keys):
+def _one(provider, prompt, out, keys, w, h):
     if provider == "pollinations":
-        _pollinations(prompt, out)
+        _pollinations(prompt, out, w, h)
     elif provider == "openai":
-        _openai(prompt, out, keys["openai"])
+        _openai(prompt, out, keys["openai"], w, h)
     else:
+        # Gemini image has no size param — steer it with an aspect hint
+        if h > w:
+            prompt = prompt + " Vertical 9:16 full-frame composition."
+        elif w > h:
+            prompt = prompt + " Wide 16:9 full-frame composition."
         _gemini(prompt, out, keys["gemini"])
 
 
-def generate(provider, prompts, out_dir, keys, log=lambda m: None, tries=3):
+def generate(provider, prompts, out_dir, keys, log=lambda m: None, tries=3, size=(1536, 864)):
+    w, h = size
     os.makedirs(out_dir, exist_ok=True)
     paths, failed = [], 0
     for i, prompt in enumerate(prompts, 1):
@@ -82,7 +89,7 @@ def generate(provider, prompts, out_dir, keys, log=lambda m: None, tries=3):
         last = None
         for attempt in range(1, tries + 1):
             try:
-                _one(provider, prompt, out, keys)
+                _one(provider, prompt, out, keys, w, h)
                 paths.append(out)
                 last = None
                 break

@@ -6,7 +6,11 @@ from typing import Optional
 
 class ProjectCreate(BaseModel):
     title: Optional[str] = None
-    channel_url: str = Field(..., description="YouTube channel URL to learn the style from")
+    channel_url: str = ""                    # required only when script_source == 'channel'
+    script_source: str = "channel"           # 'channel' | 'own'
+    user_script: Optional[str] = None        # the user's pasted script (when source == 'own')
+    script_mode: str = "asis"                # own-script: 'asis' | 'polish' | 'reference'
+    format: str = "long"                     # 'long' (16:9) or 'short' (9:16)
     language: str = "en"
     style_id: str = "ink-wash"
     style_custom: Optional[str] = None
@@ -19,6 +23,7 @@ class ProjectCreate(BaseModel):
     scene_model_custom: Optional[str] = None
     voice_id: Optional[str] = Field(None, description="voice id for the chosen TTS provider")
     length_words: int = Field(1200, ge=100, le=8000)
+    num_images: int = Field(0, ge=0, le=200, description="0 = auto (~1 per 120 words)")
 
 
 class KeyCreate(BaseModel):

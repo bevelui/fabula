@@ -13,7 +13,7 @@ import httpx
 from .. import catalog
 from ..config import settings
 from . import youtube, llm, tts, imageprompts, image_gen, captions as captions_svc, thumbnail as thumb_svc, render as render_svc, render_ffmpeg
-import glob, re
+import glob, re, math
 
 
 def _naive_scene_prompts(script, style_prefix, n):
@@ -38,9 +38,17 @@ def _project_out(project):
 
 
 def _scene_count(project, artifacts):
-    """How many images to make — roughly one per ~120 narration words, 8..60."""
-    words = artifacts.get("script_words") or project.get("length_words") or 1200
-    return max(8, min(60, round(words / 120)))
+    """How many images. User's exact choice if set, else auto so each still gets at most
+    ~SECONDS_PER_IMAGE of screen time (based on the real narration length)."""
+    chosen = project.get("num_images") or 0
+    if chosen and int(chosen) > 0:
+        return max(1, min(200, int(chosen)))
+    sec = catalog.fmt(project.get("format")).get("sec_per_image", 20)   # short=5s, long=20s
+    dur = captions_svc.audio_duration(artifacts.get("audio"))
+    if not dur:                                   # no audio yet → estimate from words (~145 wpm)
+        words = artifacts.get("script_words") or project.get("length_words") or 1200
+        dur = words / 145.0 * 60.0
+    return max(4, min(200, math.ceil(dur / sec)))
 
 # (key, human label). Order is the pipeline order.
 STAGES = [
@@ -64,6 +72,9 @@ def run_stage(key, project, log, keys=None, artifacts=None):
                                  project.get("style_custom"))
 
     if key == "analyze":                       # REAL — public RSS, no key needed
+        if (project.get("script_source") or "channel") == "own" or not (project.get("channel_url") or "").strip():
+            log("using your own script — skipping channel analysis")
+            return {"style_profile": {}}
         profile = youtube.analyze(project.get("channel_url", ""), log)
         cad = profile.get("cadence") or {}
         log(f"keywords: {', '.join(profile['top_keywords'][:8])}")
@@ -71,19 +82,47 @@ def run_stage(key, project, log, keys=None, artifacts=None):
             log(f"cadence: ~{cad['per_week']} uploads/week; avg title {profile['avg_title_words']} words")
         return {"style_profile": profile}
 
-    if key == "script":                        # REAL — Claude via BYOK
-        api_key = keys.get("anthropic")
-        if not api_key:
-            log("[skipped] no Anthropic (Claude) key in your BYOK vault — add one to enable")
-            return {"script": None, "script_status": "needs_anthropic_key"}
-        profile = artifacts.get("style_profile", {})
+    if key == "script":                        # REAL — own script or Claude-written
+        src = project.get("script_source") or "channel"
         mdl = project.get("script_model") or "claude-sonnet-5"
-        text = llm.generate_script(profile, lang, project.get("length_words", 1200),
-                                   api_key, log, model=mdl)
+        us = (project.get("user_script") or "").strip()
+        mode = project.get("script_mode") or "asis"
+        length = project.get("length_words", 1200)
+        try:
+            if src == "own":
+                if not us:
+                    log("[skipped] no script provided")
+                    return {"script": None, "script_status": "no_user_script"}
+                if mode == "asis":
+                    text = us
+                    log(f"using your script as-is: {len(text.split())} words (free, no key)")
+                else:
+                    api_key = keys.get("anthropic")
+                    if not api_key:
+                        log("[skipped] polish/reference needs your Claude key (or use 'as-is')")
+                        return {"script": None, "script_status": "needs_anthropic_key"}
+                    if mode == "polish":
+                        text = llm.polish_script(us, lang, api_key, log, model=mdl)
+                    else:
+                        text = llm.script_from_reference(us, lang, length, api_key, log, model=mdl)
+                    log(f"script ready: {len(text.split())} words")
+            else:
+                api_key = keys.get("anthropic")
+                if not api_key:
+                    log("[skipped] no Anthropic (Claude) key in your BYOK vault — add one to enable")
+                    return {"script": None, "script_status": "needs_anthropic_key"}
+                profile = artifacts.get("style_profile", {})
+                text = llm.generate_script(profile, lang, length, api_key, log, model=mdl)
+                log(f"script generated: {len(text.split())} words")
+        except httpx.HTTPStatusError as e:
+            log(f"[failed] Claude returned {e.response.status_code}")
+            return {"script": None, "script_status": f"http_{e.response.status_code}"}
+        except Exception as e:
+            log(f"[failed] script error: {str(e)[:140]}")
+            return {"script": None, "script_status": "script_error"}
         script_path = os.path.join(_project_out(project), "script.txt")
         with open(script_path, "w", encoding="utf-8") as f:
             f.write(text)
-        log(f"script generated: {len(text.split())} words")
         return {"script": text, "script_words": len(text.split()), "script_file": script_path}
 
     if key == "audio":                         # REAL — provider-dispatched TTS
@@ -138,7 +177,8 @@ def run_stage(key, project, log, keys=None, artifacts=None):
             with open(pf, "w", encoding="utf-8") as f:
                 for i, p in enumerate(prompts, 1):
                     f.write(f"--- scene {i} ---\n{p}\n\n")
-            paths = image_gen.generate(prov["id"], prompts, out, keys, log=log)
+            dims = catalog.fmt(project.get("format")).get("img", (1536, 864))
+            paths = image_gen.generate(prov["id"], prompts, out, keys, log=log, size=dims)
         except httpx.HTTPStatusError as e:
             code = e.response.status_code
             log(f"[failed] {prov['name']} returned {code} — check the relevant key")
@@ -187,7 +227,8 @@ def run_stage(key, project, log, keys=None, artifacts=None):
                     return {"video": None, "video_status": "render_disabled"}
                 render_svc.render_video(imgs, audio, caps, out, log)
             else:
-                render_ffmpeg.render_video(imgs, audio, srt, out, log)
+                vdims = catalog.fmt(project.get("format")).get("video", (1280, 720))
+                render_ffmpeg.render_video(imgs, audio, srt, out, log, size=vdims)
         except Exception as e:
             log(f"[failed] render error: {str(e)[:400]}")
             return {"video": None, "video_status": "render_error"}

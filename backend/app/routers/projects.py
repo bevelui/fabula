@@ -16,17 +16,27 @@ router = APIRouter(tags=["projects"])
 def create_project(body: ProjectCreate, user: str = Depends(current_user)):
     if not catalog.is_language_supported(body.language):
         raise HTTPException(400, f"language '{body.language}' is not available yet")
+    src = "own" if body.script_source == "own" else "channel"
+    if src == "channel" and not body.channel_url.strip():
+        raise HTTPException(400, "add a channel URL, or switch to 'my own script'")
+    if src == "own" and not (body.user_script or "").strip():
+        raise HTTPException(400, "paste your script, or switch to 'learn from a channel'")
+    mode = body.script_mode if body.script_mode in ("asis", "polish", "reference") else "asis"
     pid = db.new_id("proj")
     db.insert("projects", {
         "id": pid, "user_id": user,
         "title": body.title or "Untitled project",
-        "channel_url": body.channel_url, "language": body.language,
+        "channel_url": body.channel_url,
+        "script_source": src, "user_script": body.user_script, "script_mode": mode,
+        "format": "short" if body.format == "short" else "long",
+        "language": body.language,
         "style_id": body.style_id, "style_custom": body.style_custom,
         "voice_id": body.voice_id,
         "image_provider": body.image_provider, "audio_provider": body.audio_provider,
         "script_model": catalog.llm_model(body.script_model, body.script_model_custom),
         "scene_model": catalog.llm_model(body.scene_model, body.scene_model_custom),
-        "length_words": body.length_words, "status": "draft",
+        "length_words": body.length_words, "num_images": body.num_images,
+        "status": "draft",
         "created_at": db.now(), "updated_at": db.now(),
     })
     return db.fetchone("projects", id=pid)

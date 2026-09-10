@@ -7,9 +7,10 @@ from .config import settings
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS projects (
   id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT,
-  channel_url TEXT, language TEXT, style_id TEXT, style_custom TEXT,
+  channel_url TEXT, script_source TEXT, user_script TEXT, script_mode TEXT,
+  format TEXT, language TEXT, style_id TEXT, style_custom TEXT,
   voice_id TEXT, image_provider TEXT, audio_provider TEXT, llm_model TEXT,
-  script_model TEXT, scene_model TEXT, last_job_id TEXT,
+  script_model TEXT, scene_model TEXT, num_images INTEGER, last_job_id TEXT,
   length_words INTEGER, status TEXT DEFAULT 'draft',
   created_at REAL, updated_at REAL
 );
@@ -43,12 +44,17 @@ def init_db():
     with _conn() as c:
         c.executescript(_SCHEMA)
         # lightweight migrations for dev DBs created before a column existed
-        for tbl, col, decl in [("projects", "voice_id", "TEXT"),
+        for tbl, col, decl in [("projects", "format", "TEXT"),
+                               ("projects", "script_source", "TEXT"),
+                               ("projects", "user_script", "TEXT"),
+                               ("projects", "script_mode", "TEXT"),
+                               ("projects", "voice_id", "TEXT"),
                                ("projects", "image_provider", "TEXT"),
                                ("projects", "audio_provider", "TEXT"),
                                ("projects", "llm_model", "TEXT"),
                                ("projects", "script_model", "TEXT"),
                                ("projects", "scene_model", "TEXT"),
+                               ("projects", "num_images", "INTEGER"),
                                ("projects", "last_job_id", "TEXT")]:
             try:
                 c.execute(f"ALTER TABLE {tbl} ADD COLUMN {col} {decl}")

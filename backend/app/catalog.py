@@ -95,6 +95,18 @@ def llm_model(mid, custom=None):
     return _DEFAULT_LLM
 
 
+# Video formats: landscape long-form vs vertical Short. Sets image + video dimensions
+# and the default seconds-of-screen-time per image (auto image count).
+FORMATS = {
+    "long":  {"name": "Long video (16:9)", "img": (1536, 864), "video": (1280, 720), "sec_per_image": 20},
+    "short": {"name": "Short (9:16)",      "img": (864, 1536), "video": (720, 1280), "sec_per_image": 5},
+}
+
+
+def fmt(f):
+    return FORMATS.get(f, FORMATS["long"])
+
+
 _STYLE_BY_ID = {s["id"]: s for s in STYLE_PRESETS}
 _LANG_BY_CODE = {l["code"]: l for l in LANGUAGES}
 _IMG_BY_ID = {p["id"]: p for p in IMAGE_PROVIDERS}
