@@ -16,3 +16,9 @@ def styles():
     """Art-style presets. `custom` is also accepted on a project with style_custom text."""
     return [{"id": s["id"], "name": s["name"], "realistic": s["realistic"]}
             for s in catalog.STYLE_PRESETS]
+
+
+@router.get("/providers")
+def providers():
+    """Image + voice engines the user can pick per project. free=true needs no key."""
+    return {"image": catalog.IMAGE_PROVIDERS, "audio": catalog.AUDIO_PROVIDERS}

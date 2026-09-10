@@ -8,7 +8,8 @@ _SCHEMA = """
 CREATE TABLE IF NOT EXISTS projects (
   id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT,
   channel_url TEXT, language TEXT, style_id TEXT, style_custom TEXT,
-  voice_id TEXT, length_words INTEGER, status TEXT DEFAULT 'draft',
+  voice_id TEXT, image_provider TEXT, audio_provider TEXT,
+  length_words INTEGER, status TEXT DEFAULT 'draft',
   created_at REAL, updated_at REAL
 );
 CREATE TABLE IF NOT EXISTS jobs (
@@ -41,7 +42,9 @@ def init_db():
     with _conn() as c:
         c.executescript(_SCHEMA)
         # lightweight migrations for dev DBs created before a column existed
-        for tbl, col, decl in [("projects", "voice_id", "TEXT")]:
+        for tbl, col, decl in [("projects", "voice_id", "TEXT"),
+                               ("projects", "image_provider", "TEXT"),
+                               ("projects", "audio_provider", "TEXT")]:
             try:
                 c.execute(f"ALTER TABLE {tbl} ADD COLUMN {col} {decl}")
             except sqlite3.OperationalError:

@@ -1,24 +1,80 @@
 # -*- coding: utf-8 -*-
-"""Text-to-speech via Fish Audio (BYOK). Turns the script into a narration mp3.
+"""Text-to-speech across providers -> narration.mp3.
 
-Fish needs a `reference_id` (the voice) plus the user's API key — both come from the
-user, never hardcoded. Other providers (ElevenLabs, etc.) can slot in behind the same
-synthesize() shape later.
+  edge       : FREE, no key (Microsoft Edge voices) — default free option
+  fish       : Fish Audio (reference_id voice)
+  openai     : OpenAI TTS (voice name e.g. onyx, alloy)
+  elevenlabs : ElevenLabs (voice id)
 """
+import asyncio
 import httpx
 
 FISH_TTS = "https://api.fish.audio/v1/tts"
 
+# a sensible default Edge voice per language when the user gives no voice id
+_EDGE_DEFAULT = {
+    "en": "en-US-GuyNeural", "es": "es-MX-JorgeNeural", "fr": "fr-FR-HenriNeural",
+    "de": "de-DE-ConradNeural", "nl": "nl-NL-MaartenNeural", "it": "it-IT-DiegoNeural",
+    "pt": "pt-BR-AntonioNeural", "pl": "pl-PL-MarekNeural", "sv": "sv-SE-MattiasNeural",
+    "id": "id-ID-ArdiNeural",
+}
+
+
+def synthesize(provider, text, voice, language, keys, out_path, log=lambda m: None):
+    if provider == "edge":
+        return _edge(text, voice or _EDGE_DEFAULT.get(language, "en-US-GuyNeural"), out_path, log)
+    if provider == "openai":
+        return _openai(text, voice or "onyx", keys["openai"], out_path, log)
+    if provider == "elevenlabs":
+        return _eleven(text, voice, keys["elevenlabs"], out_path, log)
+    return synthesize_fish(text, voice, keys["fish"], out_path, log=log)
+
+
+def _edge(text, voice, out_path, log):
+    import edge_tts
+    log(f"Edge TTS (free): {len(text)} chars, voice {voice}")
+
+    async def _run():
+        await edge_tts.Communicate(text, voice).save(out_path)
+    asyncio.run(_run())
+    import os
+    return out_path, os.path.getsize(out_path)
+
+
+def _openai(text, voice, key, out_path, log):
+    log(f"OpenAI TTS: {len(text)} chars, voice {voice}")
+    with httpx.Client(timeout=300) as c:
+        r = c.post("https://api.openai.com/v1/audio/speech",
+                   headers={"Authorization": f"Bearer {key}"},
+                   json={"model": "gpt-4o-mini-tts", "voice": voice,
+                         "input": text, "response_format": "mp3"})
+        r.raise_for_status()
+        data = r.content
+    with open(out_path, "wb") as f:
+        f.write(data)
+    return out_path, len(data)
+
+
+def _eleven(text, voice_id, key, out_path, log):
+    log(f"ElevenLabs: {len(text)} chars, voice {voice_id}")
+    url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}?output_format=mp3_44100_128"
+    with httpx.Client(timeout=300) as c:
+        r = c.post(url, headers={"xi-api-key": key},
+                   json={"text": text, "model_id": "eleven_multilingual_v2"})
+        r.raise_for_status()
+        data = r.content
+    with open(out_path, "wb") as f:
+        f.write(data)
+    return out_path, len(data)
+
 
 def synthesize_fish(text, voice_id, api_key, out_path, model="speech-1.6", log=lambda m: None):
     body = {"text": text, "reference_id": voice_id, "format": "mp3", "mp3_bitrate": 128}
-    log(f"Fish TTS: {len(text)} chars, voice {voice_id[:8]}… -> mp3")
+    log(f"Fish TTS: {len(text)} chars, voice {voice_id[:8]}…")
     with httpx.Client(timeout=600) as c:
         r = c.post(FISH_TTS, json=body, headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-            "model": model,
-        })
+            "Authorization": f"Bearer {api_key}", "Content-Type": "application/json",
+            "model": model})
         r.raise_for_status()
         data = r.content
     with open(out_path, "wb") as f:

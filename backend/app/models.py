@@ -10,7 +10,9 @@ class ProjectCreate(BaseModel):
     language: str = "en"
     style_id: str = "ink-wash"
     style_custom: Optional[str] = None
-    voice_id: Optional[str] = Field(None, description="TTS voice id (e.g. Fish reference_id)")
+    image_provider: str = "pollinations"     # free by default
+    audio_provider: str = "edge"             # free by default
+    voice_id: Optional[str] = Field(None, description="voice id for the chosen TTS provider")
     length_words: int = Field(1200, ge=100, le=8000)
 
 

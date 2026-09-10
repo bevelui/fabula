@@ -1,0 +1,80 @@
+# -*- coding: utf-8 -*-
+"""Image generation across providers. One prompt -> img-NNN.jpg.
+
+  pollinations : FREE, no key (Flux under the hood)
+  gemini       : Gemini 2.5 Flash Image ('Nano Banana') — needs billing
+  openai       : gpt-image-1 (DALL·E family)
+
+Failures are logged and skipped; a first-image failure raises (usually key/quota).
+"""
+import base64, os, time, urllib.parse, random
+import httpx
+
+GEMINI_MODEL = os.environ.get("FABULA_IMAGE_MODEL", "gemini-2.5-flash-image")
+_GEMINI_EP = ("https://generativelanguage.googleapis.com/v1beta/models/"
+              "{model}:generateContent?key={key}")
+
+
+def _save(path, data):
+    with open(path, "wb") as f:
+        f.write(data)
+
+
+def _pollinations(prompt, out_path):
+    p = prompt[:900]                                   # keep the URL sane
+    url = "https://image.pollinations.ai/prompt/" + urllib.parse.quote(p)
+    r = httpx.get(url, params={"width": 1536, "height": 864, "nologo": "true",
+                               "model": "flux", "seed": random.randint(1, 10**9)},
+                  timeout=180, follow_redirects=True)
+    r.raise_for_status()
+    _save(out_path, r.content)
+
+
+def _openai(prompt, out_path, key):
+    r = httpx.post("https://api.openai.com/v1/images/generations",
+                   headers={"Authorization": f"Bearer {key}"},
+                   json={"model": "gpt-image-1", "prompt": prompt[:4000],
+                         "size": "1536x1024", "n": 1}, timeout=180)
+    r.raise_for_status()
+    d = r.json()["data"][0]
+    if d.get("b64_json"):
+        _save(out_path, base64.b64decode(d["b64_json"]))
+    else:
+        _save(out_path, httpx.get(d["url"], timeout=120).content)
+
+
+def _gemini(prompt, out_path, key):
+    r = httpx.post(_GEMINI_EP.format(model=GEMINI_MODEL, key=key),
+                   json={"contents": [{"parts": [{"text": prompt}]}],
+                         "generationConfig": {"responseModalities": ["IMAGE"]}},
+                   headers={"Content-Type": "application/json"}, timeout=180)
+    r.raise_for_status()
+    for part in r.json()["candidates"][0]["content"]["parts"]:
+        inline = part.get("inlineData") or part.get("inline_data")
+        if inline and inline.get("data"):
+            _save(out_path, base64.b64decode(inline["data"]))
+            return
+    raise RuntimeError("no image in Gemini response")
+
+
+def generate(provider, prompts, out_dir, keys, log=lambda m: None):
+    os.makedirs(out_dir, exist_ok=True)
+    paths, failed = [], 0
+    for i, prompt in enumerate(prompts, 1):
+        out = os.path.join(out_dir, f"img-{i:03d}.jpg")
+        try:
+            if provider == "pollinations":
+                _pollinations(prompt, out)
+            elif provider == "openai":
+                _openai(prompt, out, keys["openai"])
+            else:
+                _gemini(prompt, out, keys["gemini"])
+            paths.append(out)
+        except Exception as e:
+            failed += 1
+            log(f"  img-{i:03d} failed: {str(e)[:90]}")
+            if i == 1:                      # first frame failing = key/quota → stop early
+                raise
+        time.sleep(0.2)
+    log(f"images ({provider}): {len(paths)} ok, {failed} failed")
+    return paths

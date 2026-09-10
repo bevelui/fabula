@@ -12,8 +12,23 @@ import os, time
 import httpx
 from .. import catalog
 from ..config import settings
-from . import youtube, llm, tts, imageprompts, images, captions as captions_svc, thumbnail as thumb_svc, render as render_svc, render_ffmpeg
-import glob
+from . import youtube, llm, tts, imageprompts, image_gen, captions as captions_svc, thumbnail as thumb_svc, render as render_svc, render_ffmpeg
+import glob, re
+
+
+def _naive_scene_prompts(script, style_prefix, n):
+    """Fallback when there's no LLM key: split the story into N chunks, no character sheet."""
+    sents = re.split(r"(?<=[.!?…])\s+", script.strip())
+    if not sents:
+        return []
+    per = max(1, len(sents) // n)
+    chunks, i = [], 0
+    while i < len(sents) and len(chunks) < n:
+        chunk = " ".join(sents[i:i + per]).strip()
+        if chunk:
+            chunks.append(" ".join(f"{style_prefix} {chunk}".split()))
+        i += per
+    return chunks[:n] or [f"{style_prefix} {script[:200]}"]
 
 
 def _project_out(project):
@@ -67,53 +82,59 @@ def run_stage(key, project, log, keys=None, artifacts=None):
         log(f"script generated: {len(text.split())} words")
         return {"script": text, "script_words": len(text.split())}
 
-    if key == "audio":                         # REAL — Fish Audio via BYOK
+    if key == "audio":                         # REAL — provider-dispatched TTS
         text = artifacts.get("script")
         if not text:
             log("[skipped] no script text from the previous stage")
             return {"audio": None, "audio_status": "no_script"}
-        api_key = keys.get("fish")
-        voice = project.get("voice_id")
-        if not api_key or not voice:
-            missing = "Fish key" if not api_key else "voice_id"
-            log(f"[skipped] need your {missing} (add a 'fish' key + set the project voice)")
-            return {"audio": None, "audio_status": "needs_fish_key_and_voice"}
+        prov = catalog.audio_provider(project.get("audio_provider") or "edge")
+        need = prov["key"]
+        if need and not keys.get(need):
+            log(f"[skipped] '{prov['name']}' needs your {need} key (or switch to a free voice engine)")
+            return {"audio": None, "audio_status": f"needs_{need}_key"}
+        if prov["id"] in ("fish", "elevenlabs") and not project.get("voice_id"):
+            log(f"[skipped] '{prov['name']}' needs a voice id on the project")
+            return {"audio": None, "audio_status": "needs_voice_id"}
         out = os.path.join(_project_out(project), "narration.mp3")
         try:
-            path, nbytes = tts.synthesize_fish(text, voice, api_key, out, log=log)
+            path, nbytes = tts.synthesize(prov["id"], text, project.get("voice_id"),
+                                          lang, keys, out, log=log)
         except httpx.HTTPStatusError as e:
             code = e.response.status_code
-            hint = "check your Fish key" if code in (401, 403) else \
-                   "check the voice id" if code in (400, 404) else "try again"
-            log(f"[failed] Fish returned {code} — {hint}")
-            return {"audio": None, "audio_status": f"fish_http_{code}"}
+            log(f"[failed] {prov['name']} returned {code} — check the key/voice or try a free engine")
+            return {"audio": None, "audio_status": f"http_{code}"}
         except Exception as e:
-            log(f"[failed] Fish request error: {str(e)[:120]}")
-            return {"audio": None, "audio_status": "fish_error"}
+            log(f"[failed] narration error: {str(e)[:140]}")
+            return {"audio": None, "audio_status": "audio_error"}
         log(f"narration saved: {nbytes/1000:.0f} KB -> {os.path.basename(path)}")
         return {"audio": path, "audio_bytes": nbytes}
 
-    if key == "images":                        # REAL — Claude scenes + Gemini render, BYOK
+    if key == "images":                        # REAL — provider-dispatched image gen
         script = artifacts.get("script")
         if not script:
             log("[skipped] no script text to illustrate")
             return {"images": None, "images_status": "no_script"}
-        an, gm = keys.get("anthropic"), keys.get("gemini")
-        if not an or not gm:
-            missing = "Anthropic (Claude)" if not an else "Gemini"
-            log(f"[skipped] need your {missing} key (scenes use Claude, images use Gemini)")
-            return {"images": None, "images_status": "needs_keys"}
+        prov = catalog.image_provider(project.get("image_provider") or "pollinations")
+        need = prov["key"]
+        if need and not keys.get(need):
+            log(f"[skipped] '{prov['name']}' needs your {need} key (or switch to the free engine)")
+            return {"images": None, "images_status": f"needs_{need}_key"}
         n = _scene_count(project, artifacts)
         out = os.path.join(_project_out(project), "images")
         try:
-            prompts = imageprompts.build_scene_prompts(script, lang, style, n, an, log)
-            paths = images.generate_gemini(prompts, out, gm, log=log)
+            an = keys.get("anthropic")
+            if an:
+                prompts = imageprompts.build_scene_prompts(script, lang, style, n, an, log)
+            else:
+                log("no Claude key — using a simple scene split (add Claude for consistent characters)")
+                prompts = _naive_scene_prompts(script, style, n)
+            paths = image_gen.generate(prov["id"], prompts, out, keys, log=log)
         except httpx.HTTPStatusError as e:
             code = e.response.status_code
-            log(f"[failed] image provider returned {code} — check the relevant key")
+            log(f"[failed] {prov['name']} returned {code} — check the relevant key")
             return {"images": None, "images_status": f"http_{code}"}
         except Exception as e:
-            log(f"[failed] image generation error: {str(e)[:120]}")
+            log(f"[failed] image generation error: {str(e)[:140]}")
             return {"images": None, "images_status": "error"}
         return {"images": out, "image_count": len(paths)}
 

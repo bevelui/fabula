@@ -56,8 +56,32 @@ STYLE_PRESETS = [
                 "varnished tones and museum lighting. " + _SUFFIX)},
 ]
 
+# Which engine renders images / speaks narration. `key` = the BYOK provider needed
+# (None = free, no key). The app lets the user pick per project.
+IMAGE_PROVIDERS = [
+    {"id": "pollinations", "name": "Pollinations (free)", "key": None,     "free": True},
+    {"id": "gemini",       "name": "Gemini · Nano Banana", "key": "gemini", "free": False},
+    {"id": "openai",       "name": "OpenAI · GPT Image",   "key": "openai", "free": False},
+]
+AUDIO_PROVIDERS = [
+    {"id": "edge",       "name": "Edge voices (free)", "key": None,         "free": True},
+    {"id": "fish",       "name": "Fish Audio",         "key": "fish",       "free": False},
+    {"id": "openai",     "name": "OpenAI TTS",         "key": "openai",     "free": False},
+    {"id": "elevenlabs", "name": "ElevenLabs",         "key": "elevenlabs", "free": False},
+]
+
 _STYLE_BY_ID = {s["id"]: s for s in STYLE_PRESETS}
 _LANG_BY_CODE = {l["code"]: l for l in LANGUAGES}
+_IMG_BY_ID = {p["id"]: p for p in IMAGE_PROVIDERS}
+_AUD_BY_ID = {p["id"]: p for p in AUDIO_PROVIDERS}
+
+
+def image_provider(pid):
+    return _IMG_BY_ID.get(pid) or _IMG_BY_ID["pollinations"]
+
+
+def audio_provider(pid):
+    return _AUD_BY_ID.get(pid) or _AUD_BY_ID["edge"]
 
 
 def style_prompt(style_id, custom_text=None):
