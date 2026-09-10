@@ -53,16 +53,44 @@ def build_scene_prompts(script, language, style_prefix, n_scenes, api_key, log=l
         r.raise_for_status()
         data = r.json()
     spec = _parse("".join(b.get("text", "") for b in data.get("content", [])))
-    prompts = assemble(spec.get("characters", {}), spec.get("scenes", []), style_prefix)
-    log(f"{len(prompts)} scene prompts built; {len(spec.get('characters', {}))} recurring characters")
+    chars = spec.get("characters") or {}
+    scenes = spec.get("scenes") or spec.get("shots") or []
+    prompts = assemble(chars, scenes, style_prefix)
+    log(f"{len(prompts)} scene prompts built; {len(chars)} recurring characters")
     return prompts
 
 
+def _as_text(v):
+    """Coerce a character/action value to a plain string, whatever shape the model used."""
+    if isinstance(v, str):
+        return v.strip()
+    if isinstance(v, dict):
+        for f in ("description", "desc", "appearance", "look", "text", "value", "name"):
+            if isinstance(v.get(f), str):
+                return v[f].strip()
+        return " ".join(str(x).strip() for x in v.values() if isinstance(x, str))
+    if isinstance(v, list):
+        return " ".join(_as_text(x) for x in v)
+    return str(v).strip()
+
+
 def assemble(chars, scenes, style_prefix):
-    """Compose final prompts: style prefix + verbatim character descriptions + action."""
+    """Compose final prompts: style prefix + character descriptions (verbatim) + action.
+    Tolerant of the model returning characters/chars as strings, dicts, or lists."""
     out = []
     for s in scenes:
-        who = " and ".join(chars.get(k, k) for k in s.get("chars", []))
-        action = (s.get("action") or "").strip()
+        s = s if isinstance(s, dict) else {"action": s}
+        keys = s.get("chars") or s.get("characters") or []
+        if isinstance(keys, str):
+            keys = [keys]
+        parts = []
+        for k in keys:
+            if isinstance(k, dict):
+                kk = k.get("key") or k.get("name") or ""
+                parts.append(_as_text(chars.get(kk) or k))
+            else:
+                parts.append(_as_text(chars.get(k, k)))
+        who = " and ".join(p for p in parts if p)
+        action = _as_text(s.get("action") or s.get("description") or "")
         out.append(" ".join(f"{style_prefix} {who} {action}".split()))
     return out
