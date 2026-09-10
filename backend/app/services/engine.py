@@ -79,8 +79,11 @@ def run_stage(key, project, log, keys=None, artifacts=None):
         profile = artifacts.get("style_profile", {})
         text = llm.generate_script(profile, lang, project.get("length_words", 1200),
                                    api_key, log)
+        script_path = os.path.join(_project_out(project), "script.txt")
+        with open(script_path, "w", encoding="utf-8") as f:
+            f.write(text)
         log(f"script generated: {len(text.split())} words")
-        return {"script": text, "script_words": len(text.split())}
+        return {"script": text, "script_words": len(text.split()), "script_file": script_path}
 
     if key == "audio":                         # REAL — provider-dispatched TTS
         text = artifacts.get("script")

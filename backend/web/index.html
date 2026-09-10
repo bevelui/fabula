@@ -86,7 +86,8 @@
   .console .b{padding:9px 13px;border-bottom:1px solid #3a332a;color:#cbbfa8;display:flex;gap:8px;align-items:center}
   .console pre{margin:0;padding:11px 13px;max-height:240px;overflow:auto;white-space:pre-wrap}
   .arts{display:flex;flex-wrap:wrap;gap:8px;padding:0 20px 20px}
-  .art{border:1px solid var(--line);border-radius:8px;padding:8px 12px;background:var(--raise);font-size:13px}
+  .art{border:1px solid var(--line);border-radius:8px;padding:8px 12px;background:var(--raise);font-size:13px;text-decoration:none;color:var(--slate-deep)}
+  .art.strong{background:var(--ochre);color:#fff;border-color:var(--ochre);font-weight:600}
   .empty{padding:48px 24px;text-align:center;color:var(--muted)}
   .empty .big{font-family:"Fraunces",serif;font-size:22px;color:var(--ink);margin-bottom:8px}
 
@@ -265,13 +266,15 @@ function poll(pid,jid){
 
 function showArts(pid,a){
   const el=document.getElementById("arts"); if(!el)return; el.innerHTML="";
-  const files={video:"video.mp4",thumbnail:"thumbnail.jpg",srt:null,audio:"narration.mp3"};
-  const add=(label,fname)=>{ const d=document.createElement("a"); d.className="art"; d.href="/projects/"+pid+"/file?name="+encodeURIComponent(fname); d.target="_blank"; d.textContent="⬇ "+label; el.appendChild(d); };
+  const any = a.script||a.audio||a.video||a.thumbnail||a.srt||a.image_count;
+  const add=(label,fname,strong)=>{ const d=document.createElement("a"); d.className="art"+(strong?" strong":""); d.href="/projects/"+pid+"/file?name="+encodeURIComponent(fname); d.target="_blank"; d.textContent="⬇ "+label; el.appendChild(d); };
+  if(any){ const z=document.createElement("a"); z.className="art strong"; z.href="/projects/"+pid+"/zip"; z.textContent="⬇ Download all (ZIP)"; el.appendChild(z); }
   if(a.video) add("Video (mp4)","video.mp4");
   if(a.thumbnail) add("Thumbnail","thumbnail.jpg");
+  if(a.audio) add("Narration (mp3)","narration.mp3");
+  if(a.script||a.script_file) add("Script (txt)","script.txt");
   if(a.srt) add("Subtitles (.srt)", a.srt.split(/[\\/]/).pop());
-  if(a.image_count) { const s=document.createElement("span"); s.className="art"; s.textContent="🖼 "+a.image_count+" images"; el.appendChild(s); }
-  if(a.caption_words){ const s=document.createElement("span"); s.className="art"; s.textContent="✎ "+a.caption_words+" caption words"; el.appendChild(s); }
+  if(a.image_count){ const s=document.createElement("span"); s.className="art"; s.textContent="🖼 "+a.image_count+" images (in the zip)"; el.appendChild(s); }
 }
 
 // keys

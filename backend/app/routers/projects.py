@@ -63,6 +63,27 @@ def project_file(pid: str, name: str, user: str = Depends(current_user)):
     return FileResponse(path, filename=safe)
 
 
+@router.get("/projects/{pid}/zip")
+def project_zip(pid: str, user: str = Depends(current_user)):
+    """Download everything the project generated (script, audio, images, captions,
+    video, thumbnail) as one zip."""
+    if not db.fetchone("projects", id=pid, user_id=user):
+        raise HTTPException(404, "project not found")
+    folder = os.path.join(settings.OUTPUT_DIR, pid)
+    if not os.path.isdir(folder) or not os.listdir(folder):
+        raise HTTPException(404, "nothing generated yet")
+    import zipfile, tempfile
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
+    tmp.close()
+    with zipfile.ZipFile(tmp.name, "w", zipfile.ZIP_DEFLATED) as z:
+        for root, _dirs, files in os.walk(folder):
+            for fn in files:
+                full = os.path.join(root, fn)
+                z.write(full, os.path.relpath(full, folder))
+    return FileResponse(tmp.name, filename=f"fabula-{pid}.zip",
+                        media_type="application/zip")
+
+
 @router.get("/jobs/{jid}")
 def get_job(jid: str, user: str = Depends(current_user)):
     j = db.fetchone("jobs", id=jid, user_id=user)

@@ -9,11 +9,15 @@ import os, glob, shutil, subprocess, tempfile
 from ..config import settings
 from . import captions as captions_svc
 
+import os as _os
 FPS = 30
-W, H = 1920, 1080
-SUB_STYLE = ("FontName=DejaVu Serif,Fontsize=20,PrimaryColour=&H00FFFFFF&,"
+# 720p by default so it fits small instances; set FABULA_VIDEO_HEIGHT=1080 on a bigger box.
+H = int(_os.environ.get("FABULA_VIDEO_HEIGHT", "720"))
+W = (H * 16 // 9) // 2 * 2
+_UP = (W * 13 // 10) // 2 * 2                    # light Ken Burns upscale (~1.3x)
+SUB_STYLE = ("FontName=DejaVu Serif,Fontsize=18,PrimaryColour=&H00FFFFFF&,"
              "OutlineColour=&H00201810&,BorderStyle=1,Outline=2,Shadow=0,"
-             "Alignment=2,MarginV=60")
+             "Alignment=2,MarginV=48")
 
 
 def _run(cmd, cwd=None):
@@ -46,13 +50,13 @@ def render_video(images_dir, audio_path, srt_path, out_path, log=lambda m: None)
             d = total - base * (n - 1) if i == n - 1 else base   # last takes remainder
             d = max(2, d)
             clip = os.path.join(work, f"clip_{i:03d}.mp4")
-            # modest upscale (memory-light) + gentle zoom
-            zoom = ("scale=2048:-2,zoompan=z='min(zoom+0.0006,1.18)':"
+            # light upscale + gentle zoom; ultrafast = lowest memory
+            zoom = (f"scale={_UP}:-2,zoompan=z='min(zoom+0.0006,1.18)':"
                     f"d={d}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={W}x{H}:fps={FPS},"
                     "format=yuv420p")
             _run([ff, "-y", "-loglevel", "error", "-threads", "1", "-loop", "1", "-i", img,
                   "-vf", zoom, "-frames:v", str(d), "-r", str(FPS),
-                  "-c:v", "libx264", "-preset", "veryfast", "-crf", "22",
+                  "-c:v", "libx264", "-preset", "ultrafast", "-crf", "23",
                   "-pix_fmt", "yuv420p", clip])
             clips.append(clip)
         log(f"built {len(clips)} scene clips; joining + audio + captions")
@@ -70,8 +74,8 @@ def render_video(images_dir, audio_path, srt_path, out_path, log=lambda m: None)
         final = os.path.join(work, "final.mp4")
         _run([ff, "-y", "-loglevel", "error", "-threads", "1", "-i", silent, "-i", audio_path,
               "-vf", f"subtitles=subs.srt:force_style='{SUB_STYLE}'",
-              "-c:v", "libx264", "-preset", "veryfast", "-crf", "22",
-              "-c:a", "aac", "-b:a", "192k", "-shortest",
+              "-c:v", "libx264", "-preset", "ultrafast", "-crf", "23",
+              "-c:a", "aac", "-b:a", "160k", "-shortest",
               "-map", "0:v:0", "-map", "1:a:0", final], cwd=work)
 
         os.makedirs(os.path.dirname(out_path), exist_ok=True)
