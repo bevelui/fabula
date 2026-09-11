@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
-import json, os
+import json, os, glob
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse, RedirectResponse
 from ..config import settings
 from .. import db, catalog
-from ..services import storage
-from ..models import ProjectCreate
+from ..services import storage, image_gen
+from ..models import ProjectCreate, RegenImage
 from ..deps import current_user
 from ..services import jobs
 
@@ -55,13 +55,124 @@ def get_project(pid: str, user: str = Depends(current_user)):
     return p
 
 
+def _last_prepare_artifacts(project):
+    """Artifacts of the project's most recent job (script/audio/images/scene_prompts)."""
+    last = project.get("last_job_id")
+    j = db.fetchone("jobs", id=last) if last else None
+    return json.loads(j.get("artifacts") or "{}") if j else {}
+
+
+def _images_dir(pid):
+    return os.path.join(settings.OUTPUT_DIR, pid, "images")
+
+
 @router.post("/projects/{pid}/generate")
-def generate(pid: str, user: str = Depends(current_user)):
+def generate(pid: str, fresh: bool = False, user: str = Depends(current_user)):
+    """Step 1 (prepare): script -> narration -> prompts -> images, then pause at REVIEW.
+    Resumes by default (skips finished stages); fresh=1 regenerates everything."""
     p = db.fetchone("projects", id=pid, user_id=user)
     if not p:
         raise HTTPException(404, "project not found")
-    jid = jobs.create_job(p)
-    return {"job_id": jid, "status": "queued"}
+    jid = jobs.create_job(p, phase="prepare", fresh=fresh)
+    return {"job_id": jid, "status": "queued", "phase": "prepare", "fresh": fresh}
+
+
+@router.post("/projects/{pid}/approve")
+def approve(pid: str, user: str = Depends(current_user)):
+    """Step 2 (assemble): user approved the images -> captions -> render -> thumbnail."""
+    p = db.fetchone("projects", id=pid, user_id=user)
+    if not p:
+        raise HTTPException(404, "project not found")
+    art = _last_prepare_artifacts(p)
+    if not art.get("audio"):
+        raise HTTPException(400, "no narration yet — run and review step 1 first")
+    have = sorted(glob.glob(os.path.join(_images_dir(pid), "img-*.jpg")))
+    if not have:
+        raise HTTPException(400, "no images to render — regenerate at least one, then approve")
+    jid = jobs.create_job(p, phase="assemble")
+    return {"job_id": jid, "status": "queued", "phase": "assemble"}
+
+
+@router.get("/projects/{pid}/images")
+def list_images(pid: str, user: str = Depends(current_user)):
+    """The review gallery: one entry per image with its scene prompt and a viewable URL."""
+    p = db.fetchone("projects", id=pid, user_id=user)
+    if not p:
+        raise HTTPException(404, "project not found")
+    art = _last_prepare_artifacts(p)
+    prompts = art.get("scene_prompts") or []
+    frames = sorted(glob.glob(os.path.join(_images_dir(pid), "img-*.jpg")))
+    idxs = sorted({int(os.path.basename(f)[4:7]) for f in frames}
+                  | set(range(1, len(prompts) + 1)))
+    out = []
+    for i in idxs:
+        on_disk = os.path.isfile(os.path.join(_images_dir(pid), f"img-{i:03d}.jpg"))
+        out.append({
+            "index": i,
+            "url": f"/projects/{pid}/image/{i}?uid={user}",
+            "prompt": prompts[i - 1] if i - 1 < len(prompts) else "",
+            "ready": on_disk,
+        })
+    return {"format": p.get("format"), "count": len(out), "images": out}
+
+
+@router.get("/projects/{pid}/image/{n}")
+def get_image(pid: str, n: int, user: str = Depends(current_user)):
+    """Serve one image (local volume first, R2 presigned fallback)."""
+    if not db.fetchone("projects", id=pid, user_id=user):
+        raise HTTPException(404, "project not found")
+    name = f"img-{int(n):03d}.jpg"
+    path = os.path.join(_images_dir(pid), name)
+    if os.path.isfile(path):
+        return FileResponse(path, media_type="image/jpeg")
+    if storage.enabled():
+        try:
+            return RedirectResponse(storage.presigned_url(pid, f"images/{name}"))
+        except Exception:
+            pass
+    raise HTTPException(404, "image not found")
+
+
+@router.post("/projects/{pid}/regenerate-image")
+def regenerate_image(pid: str, body: RegenImage, user: str = Depends(current_user)):
+    """Redo one image in place — reuse its scene prompt, or an edited prompt from the user."""
+    p = db.fetchone("projects", id=pid, user_id=user)
+    if not p:
+        raise HTTPException(404, "project not found")
+    art = _last_prepare_artifacts(p)
+    prompts = art.get("scene_prompts") or []
+    idx = body.index
+    prompt = (body.prompt or "").strip() or (prompts[idx - 1] if idx - 1 < len(prompts) else "")
+    if not prompt:
+        raise HTTPException(400, "no prompt for that image — run step 1 first, or supply a prompt")
+    prov = catalog.image_provider(p.get("image_provider") or "pollinations")
+    need = prov["key"]
+    keys = jobs._load_keys(user)
+    if need and not keys.get(need):
+        raise HTTPException(400, f"'{prov['name']}' needs your {need} key, or switch to the free engine")
+    dims = catalog.fmt(p.get("format")).get("img", (1536, 864))
+    out = os.path.join(_images_dir(pid), f"img-{idx:03d}.jpg")
+    logs = []
+    try:
+        image_gen.generate_one(prov["id"], prompt, out, keys, size=dims, log=logs.append)
+    except Exception as e:
+        raise HTTPException(502, f"image engine failed: {str(e)[:160]}")
+    # persist an edited prompt back into the reviewed artifacts so a re-render/prompts.txt agree
+    if body.prompt and idx - 1 < len(prompts):
+        prompts[idx - 1] = prompt
+        last = p.get("last_job_id")
+        j = db.fetchone("jobs", id=last) if last else None
+        if j:
+            a = json.loads(j.get("artifacts") or "{}")
+            a["scene_prompts"] = prompts
+            db.update("jobs", last, {"artifacts": json.dumps(a)})
+    if storage.enabled():
+        try:
+            storage.upload_one(pid, out, f"images/img-{idx:03d}.jpg")
+        except Exception:
+            pass
+    return {"ok": True, "index": idx,
+            "url": f"/projects/{pid}/image/{idx}?uid={user}", "prompt": prompt}
 
 
 @router.get("/projects/{pid}/file")

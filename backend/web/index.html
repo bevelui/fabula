@@ -292,19 +292,29 @@ async function selectProject(pid){
       <div class="m">${p.format==='short'?'📱 Short':'🎬 Long'} · ${p.channel_url||""} · ${p.language} · ${p.style_id}${p.style_custom?(' ('+p.style_custom+')'):''} · ~${p.length_words} words</div></div>
     <div class="stages">${stages}</div>
     <div class="bar"><i id="bar"></i></div>
-    <div style="padding:14px 20px"><button class="btn slate" id="genBtn" onclick="generate('${pid}')">▶ Generate video</button></div>
-    <div class="console"><div class="b"><span id="spin" class="spin"></span><span id="cstat">idle</span></div><pre id="log">Add your keys (top-right), then Generate. Watch progress here.</pre></div>
+    <div style="padding:14px 20px;display:flex;gap:10px;flex-wrap:wrap">
+      <button class="btn slate" id="genBtn" onclick="generate('${pid}',false)">▶ Step 1 · Generate script, voice & images</button>
+      <button class="btn" id="freshBtn" onclick="startOver('${pid}')" style="display:none">↻ Start over</button>
+    </div>
+    <div class="console"><div class="b"><span id="spin" class="spin"></span><span id="cstat">idle</span></div><pre id="log">Add your keys (top-right), then Generate. Watch progress here.<br>Tip: if a step fails, just hit Generate again — finished steps (script, voice, images) are kept and only what's missing is redone.</pre></div>
+    <div id="review"></div>
     <div class="arts" id="arts"></div>`;
   if(p.last_job_id){ try{ const j=await api("/jobs/"+p.last_job_id); applyJob(pid,j);
     if(j.status==="running"||j.status==="queued") poll(pid,p.last_job_id);
   }catch(err){} }
 }
 
-async function generate(pid){
+async function generate(pid, fresh){
   document.getElementById("genBtn").disabled=true;
+  const fb=document.getElementById("freshBtn"); if(fb) fb.disabled=true;
   document.getElementById("cstat").textContent="starting…";
-  try{ const r=await api("/projects/"+pid+"/generate",{method:"POST"}); poll(pid,r.job_id); }
-  catch(e){ alert(e.detail||"Could not start"); document.getElementById("genBtn").disabled=false; }
+  const rv=document.getElementById("review"); if(rv) rv.innerHTML="";
+  try{ const r=await api("/projects/"+pid+"/generate"+(fresh?"?fresh=1":""),{method:"POST"}); poll(pid,r.job_id); }
+  catch(e){ alert(e.detail||"Could not start"); document.getElementById("genBtn").disabled=false; if(fb) fb.disabled=false; }
+}
+async function startOver(pid){
+  if(!confirm("Start over? This regenerates the script, voice and images from scratch (uses credits/time). Your current files will be replaced."))return;
+  generate(pid, true);
 }
 
 function applyJob(pid,j){
@@ -316,13 +326,24 @@ function applyJob(pid,j){
   STAGES.forEach(([k,l])=>{ const el=document.getElementById("stg-"+k); if(!el)return;
     const started=(j.log||[]).some(x=>x.includes("=== "+l)); const done=(j.progress||0)>=(STAGES.findIndex(s=>s[0]===k)+1)/STAGES.length-0.001;
     el.className="stg"+(j.status==="error"&&started?" err":done?" done":started?" run":""); });
+  if(j.status==="review"){ showReview(pid,j.artifacts||{}); }
   if(j.status==="done"||j.status==="error"){ if(j.artifacts) showArts(pid,j.artifacts); }
+  reflectResume(j);
+}
+function reflectResume(j){
+  const a=j.artifacts||{}; const running=j.status==="running"||j.status==="queued";
+  const hasWork = !!(a.image_count || a.audio || a.script);
+  const fb=document.getElementById("freshBtn"), gb=document.getElementById("genBtn");
+  if(fb){ fb.style.display = hasWork ? "" : "none"; fb.disabled = running; }
+  if(gb){ gb.disabled = running;
+    if(!running) gb.textContent = hasWork ? "▶ Resume — continue where it stopped"
+                                          : "▶ Step 1 · Generate script, voice & images"; }
 }
 function poll(pid,jid){
   if(POLL) clearInterval(POLL);
   const tick=async()=>{
     const j=await api("/jobs/"+jid); applyJob(pid,j);
-    if(j.status==="done"||j.status==="error"){
+    if(j.status==="done"||j.status==="error"||j.status==="review"){
       clearInterval(POLL); POLL=null;
       const gb=document.getElementById("genBtn"); if(gb) gb.disabled=false;
       loadProjects();
@@ -350,6 +371,56 @@ function showArts(pid,a){
     pre.textContent=a.scene_prompts.map((p,i)=>"["+(i+1)+"] "+p).join("\n\n");
     d.appendChild(sm); d.appendChild(pre); el.appendChild(d);
   }
+}
+
+// ---- Step 2: review the voice + images, redo any, then approve to render ----
+async function showReview(pid, art){
+  const box=document.getElementById("review"); if(!box) return;
+  let data; try{ data=await api("/projects/"+pid+"/images"); }catch(e){ box.innerHTML=""; return; }
+  const uid=encodeURIComponent(UID);
+  const gb=document.getElementById("genBtn");
+  if(gb){ gb.textContent="↻ Redo step 1 (new script/voice/images)"; gb.disabled=false; }
+  const audio = art && art.audio
+    ? `<audio controls style="width:100%;margin:6px 0 14px" src="/projects/${pid}/file?name=narration.mp3&uid=${uid}"></audio>`
+    : `<p class="note">No narration was produced — check the log above.</p>`;
+  const cells = data.images.map(im=>`
+    <div class="rvcell" style="border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--surface)">
+      <div style="position:relative;aspect-ratio:${data.format==='short'?'9/16':'16/9'};background:#0002">
+        <img id="rvimg-${im.index}" src="${im.url}" style="width:100%;height:100%;object-fit:cover;display:block"
+             onerror="this.style.opacity=.25">
+        <span style="position:absolute;top:6px;left:6px;background:#000a;color:#fff;font-size:11px;padding:2px 7px;border-radius:20px">#${im.index}</span>
+      </div>
+      <div style="padding:8px">
+        <textarea id="rvp-${im.index}" rows="2" style="width:100%;font-size:11px;box-sizing:border-box;border:1px solid var(--line);border-radius:6px;padding:6px;color:var(--body);background:var(--bg)">${(im.prompt||"").replace(/</g,"&lt;")}</textarea>
+        <button class="btn" style="width:100%;margin-top:6px;font-size:12px;padding:7px" onclick="regenImage(this,'${pid}',${im.index})">↻ Redo this image</button>
+      </div>
+    </div>`).join("");
+  box.innerHTML=`
+    <div style="padding:6px 20px 4px"><h2 style="border:none;padding:0;margin:0">Step 2 · Review</h2>
+      <p class="note" style="margin:4px 0 0">Listen to the narration and check every image. Edit a prompt and hit <b>Redo this image</b> to replace just that one. When it all looks right, approve — that's when the video renders. If a render ever fails, just approve again: your images are kept and it retries at a lighter setting.</p></div>
+    <div style="padding:0 20px">${audio}
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px">${cells}</div>
+      <div style="margin:16px 0"><button class="btn slate" id="approveBtn" style="width:100%;font-size:15px;padding:13px" onclick="approveRender('${pid}')">✓ Approve — render the video</button></div>
+    </div>`;
+}
+async function regenImage(btn, pid, idx){
+  const ta=document.getElementById("rvp-"+idx); const img=document.getElementById("rvimg-"+idx);
+  const btns=document.querySelectorAll("#review button"); btns.forEach(b=>b.disabled=true);
+  if(btn) btn.textContent="… generating";
+  try{
+    await api("/projects/"+pid+"/regenerate-image",{method:"POST",
+      body:JSON.stringify({index:idx, prompt:(ta?ta.value:"")||null})});
+    if(img){ img.style.opacity=1; img.src=img.src.split("&_=")[0]+"&_="+Date.now(); }
+  }catch(e){ alert(e.detail||"Could not regenerate that image"); }
+  finally{ btns.forEach(b=>b.disabled=false); if(btn) btn.textContent="↻ Redo this image"; }
+}
+async function approveRender(pid){
+  const b=document.getElementById("approveBtn"); if(b){ b.disabled=true; b.textContent="rendering… watch the log above"; }
+  document.getElementById("review").querySelectorAll("button").forEach(x=>x.disabled=true);
+  try{ const r=await api("/projects/"+pid+"/approve",{method:"POST"});
+    document.getElementById("review").innerHTML="";   // hand back to the progress console
+    poll(pid, r.job_id);
+  }catch(e){ alert(e.detail||"Could not start the render"); if(b){ b.disabled=false; b.textContent="✓ Approve — render the video"; } }
 }
 
 // keys

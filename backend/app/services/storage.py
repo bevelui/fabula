@@ -43,6 +43,15 @@ def upload_dir(pid, local_dir, log=lambda m: None):
     return n
 
 
+def upload_one(pid, local_path, name, log=lambda m: None):
+    """Upload a single file to R2 as <pid>/<name> (used when one image is regenerated)."""
+    if not enabled() or not os.path.isfile(local_path):
+        return False
+    _client().upload_file(local_path, settings.R2_BUCKET, f"{pid}/{name}")
+    log(f"synced {name} to R2")
+    return True
+
+
 def presigned_url(pid, name, expires=3600):
     """A temporary download URL for a private R2 object."""
     return _client().generate_presigned_url(

@@ -80,6 +80,24 @@ def _one(provider, prompt, out, keys, w, h):
         _gemini(prompt, out, keys["gemini"])
 
 
+def generate_one(provider, prompt, out_path, keys, size=(1536, 864), tries=3, log=lambda m: None):
+    """Regenerate a single image to a specific path (for the review 'redo' button)."""
+    w, h = size
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    last = None
+    for attempt in range(1, tries + 1):
+        try:
+            _one(provider, prompt, out_path, keys, w, h)
+            return out_path
+        except Exception as e:
+            last = e
+            if attempt < tries and _retryable(e):
+                time.sleep(1.5 * attempt)
+            else:
+                break
+    raise last
+
+
 def generate(provider, prompts, out_dir, keys, log=lambda m: None, tries=3, size=(1536, 864)):
     w, h = size
     os.makedirs(out_dir, exist_ok=True)

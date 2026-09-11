@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS jobs (
   id TEXT PRIMARY KEY, project_id TEXT NOT NULL, user_id TEXT NOT NULL,
   status TEXT DEFAULT 'queued', stage TEXT, progress REAL DEFAULT 0,
   log TEXT DEFAULT '[]', error TEXT, artifacts TEXT DEFAULT '{}',
-  created_at REAL, updated_at REAL
+  phase TEXT DEFAULT 'full', created_at REAL, updated_at REAL
 );
 CREATE TABLE IF NOT EXISTS provider_keys (
   id TEXT PRIMARY KEY, user_id TEXT NOT NULL, provider TEXT NOT NULL,
@@ -55,7 +55,8 @@ def init_db():
                                ("projects", "script_model", "TEXT"),
                                ("projects", "scene_model", "TEXT"),
                                ("projects", "num_images", "INTEGER"),
-                               ("projects", "last_job_id", "TEXT")]:
+                               ("projects", "last_job_id", "TEXT"),
+                               ("jobs", "phase", "TEXT")]:
             try:
                 c.execute(f"ALTER TABLE {tbl} ADD COLUMN {col} {decl}")
             except sqlite3.OperationalError:

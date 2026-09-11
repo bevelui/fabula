@@ -31,6 +31,11 @@ class KeyCreate(BaseModel):
     api_key: str
 
 
+class RegenImage(BaseModel):
+    index: int = Field(..., ge=1, le=200)
+    prompt: Optional[str] = None              # optional edited prompt; else reuse the scene's
+
+
 class FeedbackCreate(BaseModel):
     kind: str = Field("idea", description="idea | bug | other")
     message: str = Field(..., min_length=1, max_length=4000)

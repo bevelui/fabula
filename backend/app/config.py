@@ -20,7 +20,7 @@ _load_dotenv()
 
 class Settings:
     APP_NAME = "Fábula API"
-    VERSION = "0.1.0"
+    VERSION = "0.3.0-resume+render-fallback"
     # SQLite for local dev; swap DATABASE_URL to Postgres/Supabase in production.
     DB_PATH = os.environ.get("FABULA_DB", os.path.join(ROOT, "data", "fabula.db"))
     OUTPUT_DIR = os.environ.get("FABULA_OUTPUT", os.path.join(ROOT, "data", "output"))

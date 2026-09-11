@@ -33,7 +33,8 @@ def health():
 def home():
     index = os.path.join(WEB_DIR, "index.html")
     if os.path.exists(index):
-        return FileResponse(index)
+        # never cache the app shell, so a redeploy is picked up immediately (no stale UI)
+        return FileResponse(index, headers={"Cache-Control": "no-cache, must-revalidate"})
     return {"name": settings.APP_NAME, "docs": "/docs"}
 
 
