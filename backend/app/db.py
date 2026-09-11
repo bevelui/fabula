@@ -11,6 +11,8 @@ CREATE TABLE IF NOT EXISTS projects (
   format TEXT, language TEXT, style_id TEXT, style_custom TEXT,
   voice_id TEXT, image_provider TEXT, audio_provider TEXT, llm_model TEXT,
   script_model TEXT, scene_model TEXT, num_images INTEGER, last_job_id TEXT,
+  render_engine TEXT DEFAULT 'ffmpeg', resolution INTEGER DEFAULT 1080,
+  remotion_backend TEXT DEFAULT 'worker',
   length_words INTEGER, status TEXT DEFAULT 'draft',
   created_at REAL, updated_at REAL
 );
@@ -56,6 +58,9 @@ def init_db():
                                ("projects", "scene_model", "TEXT"),
                                ("projects", "num_images", "INTEGER"),
                                ("projects", "last_job_id", "TEXT"),
+                               ("projects", "render_engine", "TEXT"),
+                               ("projects", "resolution", "INTEGER"),
+                               ("projects", "remotion_backend", "TEXT"),
                                ("jobs", "phase", "TEXT")]:
             try:
                 c.execute(f"ALTER TABLE {tbl} ADD COLUMN {col} {decl}")

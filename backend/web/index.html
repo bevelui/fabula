@@ -373,10 +373,97 @@ function showArts(pid,a){
   }
 }
 
+// ---- render-engine + backend + resolution pickers (step 2) ----
+let RENDER_ENGINES=[], CUR_ENGINE="ffmpeg";
+let RENDER_BACKENDS=[], CUR_BACKEND="worker";
+let RESOLUTIONS=[], CUR_RES=1080;
+async function loadEngines(){ if(RENDER_ENGINES.length) return RENDER_ENGINES;
+  try{ const r=await api("/catalog/render-engines"); RENDER_ENGINES=r.engines||[]; RENDER_BACKENDS=r.remotion_backends||[]; }
+  catch(e){ RENDER_ENGINES=[]; }
+  return RENDER_ENGINES; }
+async function loadResolutions(){ if(RESOLUTIONS.length) return RESOLUTIONS;
+  try{ const r=await api("/catalog/resolutions"); RESOLUTIONS=r.options||[]; CUR_RES=r.default||1080; }
+  catch(e){ RESOLUTIONS=[]; }
+  return RESOLUTIONS; }
+function pickRes(p){ CUR_RES=p;
+  document.querySelectorAll(".rescard").forEach(c=>{ const on=+c.dataset.res===p;
+    c.style.borderColor=on?"var(--slate-deep)":"var(--line)";
+    c.style.boxShadow=on?"0 0 0 2px var(--slate-deep) inset":"none";
+    const d=c.querySelector(".resdot"); if(d) d.textContent=on?"●":"○"; }); }
+function resPickerHTML(res){
+  if(!res.length) return "";
+  const cards=res.map(r=>{ const on=r.p===CUR_RES;
+    return `<div class="rescard" data-res="${r.p}" onclick="pickRes(${r.p})"
+       style="flex:1;min-width:150px;cursor:pointer;border:1px solid ${on?'var(--slate-deep)':'var(--line)'};
+       ${on?'box-shadow:0 0 0 2px var(--slate-deep) inset;':''}border-radius:10px;padding:10px 12px;background:var(--surface)">
+       <div style="display:flex;align-items:center;gap:7px"><span class="resdot" style="color:var(--slate-deep)">${on?'●':'○'}</span><b style="font-size:13px">${r.name}</b></div>
+       <p class="note" style="margin:5px 0 0;font-size:11px">${r.tag||""}</p></div>`;
+  }).join("");
+  return `<div style="margin:6px 0 4px"><b style="font-size:13px">Resolution</b></div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">${cards}</div>`;
+}
+function pickEngine(id){ CUR_ENGINE=id;
+  document.querySelectorAll(".engcard").forEach(c=>{
+    const on=c.dataset.eng===id;
+    c.style.borderColor=on?"var(--slate-deep)":"var(--line)";
+    c.style.boxShadow=on?"0 0 0 2px var(--slate-deep) inset":"none";
+    const dot=c.querySelector(".engdot"); if(dot) dot.textContent=on?"●":"○";
+  });
+  const bw=document.getElementById("backendWrap"); if(bw) bw.style.display = id==="remotion" ? "" : "none";
+}
+function pickBackend(id){ CUR_BACKEND=id;
+  document.querySelectorAll(".bkcard").forEach(c=>{ const on=c.dataset.bk===id;
+    c.style.borderColor=on?"var(--slate-deep)":"var(--line)";
+    c.style.boxShadow=on?"0 0 0 2px var(--slate-deep) inset":"none";
+    const d=c.querySelector(".bkdot"); if(d) d.textContent=on?"●":"○"; }); }
+function backendPickerHTML(backends){
+  if(!backends.length) return "";
+  const cards=backends.map(b=>{ const on=b.id===CUR_BACKEND;
+    const pros=(b.pros||[]).map(p=>`<li style="color:var(--body)">✓ ${p}</li>`).join("");
+    const cons=(b.cons||[]).map(p=>`<li style="color:var(--muted,#8a8)">· ${p}</li>`).join("");
+    return `<div class="bkcard" data-bk="${b.id}" onclick="pickBackend('${b.id}')"
+        style="flex:1;min-width:210px;cursor:pointer;border:1px solid ${on?'var(--slate-deep)':'var(--line)'};
+        ${on?'box-shadow:0 0 0 2px var(--slate-deep) inset;':''}border-radius:10px;padding:11px 12px;background:var(--bg)">
+      <div style="display:flex;align-items:center;gap:7px"><span class="bkdot" style="color:var(--slate-deep)">${on?'●':'○'}</span>
+        <b style="font-size:13px">${b.name}</b>${b.premium?' <span style="font-size:9px;background:var(--slate-deep);color:#fff;padding:1px 6px;border-radius:20px">$$</span>':''}</div>
+      <p class="note" style="margin:5px 0 6px;font-size:11px">${b.tagline||""}</p>
+      <ul style="margin:0;padding-left:15px;font-size:11px;line-height:1.45">${pros}${cons}</ul>
+    </div>`;
+  }).join("");
+  return `<div id="backendWrap" style="display:${CUR_ENGINE==='remotion'?'':'none'};margin:-4px 0 12px;padding:10px 12px;border-left:3px solid var(--line)">
+      <div style="margin:0 0 6px"><b style="font-size:12px">Remotion renders on</b></div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">${cards}</div></div>`;
+}
+function enginePickerHTML(engines){
+  if(!engines.length) return "";
+  const cards=engines.map(e=>{
+    const on=e.id===CUR_ENGINE;
+    const pros=(e.pros||[]).map(p=>`<li style="color:var(--body)">✓ ${p}</li>`).join("");
+    const cons=(e.cons||[]).map(p=>`<li style="color:var(--muted,#8a8)">· ${p}</li>`).join("");
+    return `<div class="engcard" data-eng="${e.id}" onclick="pickEngine('${e.id}')"
+        style="flex:1;min-width:220px;cursor:pointer;border:1px solid ${on?'var(--slate-deep)':'var(--line)'};
+        ${on?'box-shadow:0 0 0 2px var(--slate-deep) inset;':''}border-radius:10px;padding:12px;background:var(--surface)">
+      <div style="display:flex;align-items:center;gap:8px">
+        <span class="engdot" style="color:var(--slate-deep)">${on?'●':'○'}</span>
+        <b>${e.name}</b>${e.premium?' <span style="font-size:10px;background:var(--slate-deep);color:#fff;padding:1px 7px;border-radius:20px;vertical-align:middle">PREMIUM</span>':''}
+      </div>
+      <p class="note" style="margin:6px 0 8px">${e.tagline||""}</p>
+      <ul style="margin:0;padding-left:16px;font-size:12px;line-height:1.5">${pros}${cons}</ul>
+    </div>`;
+  }).join("");
+  return `<div style="margin:6px 0 4px"><b style="font-size:13px">Render engine</b></div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">${cards}</div>`;
+}
+
 // ---- Step 2: review the voice + images, redo any, then approve to render ----
 async function showReview(pid, art){
   const box=document.getElementById("review"); if(!box) return;
   let data; try{ data=await api("/projects/"+pid+"/images"); }catch(e){ box.innerHTML=""; return; }
+  const engines=await loadEngines();
+  const res=await loadResolutions();
+  if(data.resolution) CUR_RES=data.resolution;   // pre-select the project's default (long 720, short 1080)
+  if(data.engine) CUR_ENGINE=data.engine;
+  if(data.backend) CUR_BACKEND=data.backend;
   const uid=encodeURIComponent(UID);
   const gb=document.getElementById("genBtn");
   if(gb){ gb.textContent="↻ Redo step 1 (new script/voice/images)"; gb.disabled=false; }
@@ -400,7 +487,9 @@ async function showReview(pid, art){
       <p class="note" style="margin:4px 0 0">Listen to the narration and check every image. Edit a prompt and hit <b>Redo this image</b> to replace just that one. When it all looks right, approve — that's when the video renders. If a render ever fails, just approve again: your images are kept and it retries at a lighter setting.</p></div>
     <div style="padding:0 20px">${audio}
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px">${cells}</div>
-      <div style="margin:16px 0"><button class="btn slate" id="approveBtn" style="width:100%;font-size:15px;padding:13px" onclick="approveRender('${pid}')">✓ Approve — render the video</button></div>
+      <div style="margin:16px 0 4px">${resPickerHTML(res)}</div>
+      <div style="margin:4px 0 4px">${enginePickerHTML(engines)}${backendPickerHTML(RENDER_BACKENDS)}</div>
+      <div style="margin:4px 0 16px"><button class="btn slate" id="approveBtn" style="width:100%;font-size:15px;padding:13px" onclick="approveRender('${pid}')">✓ Approve — render the video</button></div>
     </div>`;
 }
 async function regenImage(btn, pid, idx){
@@ -417,7 +506,7 @@ async function regenImage(btn, pid, idx){
 async function approveRender(pid){
   const b=document.getElementById("approveBtn"); if(b){ b.disabled=true; b.textContent="rendering… watch the log above"; }
   document.getElementById("review").querySelectorAll("button").forEach(x=>x.disabled=true);
-  try{ const r=await api("/projects/"+pid+"/approve",{method:"POST"});
+  try{ const r=await api("/projects/"+pid+"/approve",{method:"POST",body:JSON.stringify({engine:CUR_ENGINE,backend:CUR_BACKEND,resolution:CUR_RES})});
     document.getElementById("review").innerHTML="";   // hand back to the progress console
     poll(pid, r.job_id);
   }catch(e){ alert(e.detail||"Could not start the render"); if(b){ b.disabled=false; b.textContent="✓ Approve — render the video"; } }

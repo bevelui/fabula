@@ -5,7 +5,8 @@ from fastapi.responses import FileResponse, RedirectResponse
 from ..config import settings
 from .. import db, catalog
 from ..services import storage, image_gen
-from ..models import ProjectCreate, RegenImage
+from typing import Optional
+from ..models import ProjectCreate, RegenImage, ApproveBody
 from ..deps import current_user
 from ..services import jobs
 
@@ -22,13 +23,15 @@ def create_project(body: ProjectCreate, user: str = Depends(current_user)):
     if src == "own" and not (body.user_script or "").strip():
         raise HTTPException(400, "paste your script, or switch to 'learn from a channel'")
     mode = body.script_mode if body.script_mode in ("asis", "polish", "reference") else "asis"
+    fmt_id = "short" if body.format == "short" else "long"
+    res = catalog.resolution(body.resolution) if body.resolution else catalog.default_resolution(fmt_id)
     pid = db.new_id("proj")
     db.insert("projects", {
         "id": pid, "user_id": user,
         "title": body.title or "Untitled project",
         "channel_url": body.channel_url,
         "script_source": src, "user_script": body.user_script, "script_mode": mode,
-        "format": "short" if body.format == "short" else "long",
+        "format": fmt_id,
         "language": body.language,
         "style_id": body.style_id, "style_custom": body.style_custom,
         "voice_id": body.voice_id,
@@ -36,6 +39,9 @@ def create_project(body: ProjectCreate, user: str = Depends(current_user)):
         "script_model": catalog.llm_model(body.script_model, body.script_model_custom),
         "scene_model": catalog.llm_model(body.scene_model, body.scene_model_custom),
         "length_words": body.length_words, "num_images": body.num_images,
+        "render_engine": catalog.render_engine(body.render_engine),
+        "remotion_backend": catalog.remotion_backend(body.remotion_backend),
+        "resolution": res,
         "status": "draft",
         "created_at": db.now(), "updated_at": db.now(),
     })
@@ -78,8 +84,9 @@ def generate(pid: str, fresh: bool = False, user: str = Depends(current_user)):
 
 
 @router.post("/projects/{pid}/approve")
-def approve(pid: str, user: str = Depends(current_user)):
-    """Step 2 (assemble): user approved the images -> captions -> render -> thumbnail."""
+def approve(pid: str, body: Optional[ApproveBody] = None, user: str = Depends(current_user)):
+    """Step 2 (assemble): user approved the images -> captions -> render -> thumbnail.
+    An optional {engine} picks the render engine (ffmpeg | remotion) for this render."""
     p = db.fetchone("projects", id=pid, user_id=user)
     if not p:
         raise HTTPException(404, "project not found")
@@ -89,8 +96,21 @@ def approve(pid: str, user: str = Depends(current_user)):
     have = sorted(glob.glob(os.path.join(_images_dir(pid), "img-*.jpg")))
     if not have:
         raise HTTPException(400, "no images to render — regenerate at least one, then approve")
+    upd = {}
+    if body and body.engine:
+        upd["render_engine"] = catalog.render_engine(body.engine)
+    if body and body.backend:
+        upd["remotion_backend"] = catalog.remotion_backend(body.backend)
+    if body and body.resolution:
+        upd["resolution"] = catalog.resolution(body.resolution)
+    if upd:
+        db.update("projects", pid, upd)
+        p.update(upd)
     jid = jobs.create_job(p, phase="assemble")
-    return {"job_id": jid, "status": "queued", "phase": "assemble"}
+    return {"job_id": jid, "status": "queued", "phase": "assemble",
+            "engine": p.get("render_engine", "ffmpeg"),
+            "backend": catalog.remotion_backend(p.get("remotion_backend")),
+            "resolution": catalog.resolution(p.get("resolution"))}
 
 
 @router.get("/projects/{pid}/images")
@@ -113,7 +133,10 @@ def list_images(pid: str, user: str = Depends(current_user)):
             "prompt": prompts[i - 1] if i - 1 < len(prompts) else "",
             "ready": on_disk,
         })
-    return {"format": p.get("format"), "count": len(out), "images": out}
+    return {"format": p.get("format"), "resolution": catalog.resolution(p.get("resolution")),
+            "engine": catalog.render_engine(p.get("render_engine")),
+            "backend": catalog.remotion_backend(p.get("remotion_backend")),
+            "count": len(out), "images": out}
 
 
 @router.get("/projects/{pid}/image/{n}")

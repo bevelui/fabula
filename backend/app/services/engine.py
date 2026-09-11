@@ -12,7 +12,7 @@ import os, time
 import httpx
 from .. import catalog
 from ..config import settings
-from . import youtube, llm, tts, imageprompts, image_gen, captions as captions_svc, thumbnail as thumb_svc, render as render_svc, render_ffmpeg
+from . import youtube, llm, tts, imageprompts, image_gen, captions as captions_svc, thumbnail as thumb_svc, render as render_svc, render_ffmpeg, render_remote, render_remotion
 import glob, re, math
 
 
@@ -220,19 +220,24 @@ def run_stage(key, project, log, keys=None, artifacts=None):
             log(f"[skipped] need {', '.join(missing)} from earlier stages")
             return {"video": None, "video_status": "missing_" + "_".join(missing)}
         out = os.path.join(_project_out(project), "video.mp4")
-        try:
-            if settings.RENDER_ENGINE == "remotion":
-                if not os.path.isdir(settings.REMOTION_PROJECT):
-                    log("[skipped] Remotion project not available on this server")
-                    return {"video": None, "video_status": "render_disabled"}
-                render_svc.render_video(imgs, audio, caps, out, log)
+        engine = catalog.render_engine(project.get("render_engine") or settings.RENDER_ENGINE)
+        vdims = catalog.video_dims(project.get("format"), project.get("resolution"))
+        log(f"output: {vdims[0]}x{vdims[1]} ({catalog.resolution(project.get('resolution'))}p)")
+        # Dispatch to the dedicated render worker when one is configured; else render here.
+        if settings.RENDER_WORKER_URL:
+            render_remote.render_via_worker(project, imgs, audio, srt, out, engine, log)
+            return {"video": out, "render_engine": engine}
+        if engine == "remotion":
+            if settings.REMOTION_ENABLED and os.path.isdir(os.path.join(settings.REMOTION_DIR, "src")):
+                render_remotion.render_video(imgs, audio, caps, out, size=vdims, log=log)
             else:
-                vdims = catalog.fmt(project.get("format")).get("video", (1280, 720))
+                log("Cinematic (Remotion) isn't enabled on this server yet (needs Node + the "
+                    "render worker) — rendering with the standard engine instead")
                 render_ffmpeg.render_video(imgs, audio, srt, out, log, size=vdims)
-        except Exception as e:
-            log(f"[failed] render error: {str(e)[:400]}")
-            return {"video": None, "video_status": "render_error"}
-        return {"video": out}
+                engine = "ffmpeg"
+        else:
+            render_ffmpeg.render_video(imgs, audio, srt, out, log, size=vdims)
+        return {"video": out, "render_engine": engine}
 
     if key == "thumbnail":                     # REAL — PIL, no key
         imgs_dir = artifacts.get("images")

@@ -31,6 +31,24 @@ class Settings:
     REMOTION_PROJECT = os.environ.get("FABULA_REMOTION", "C:/Users/eiman/Downloads/cuentos-pilot")
     NODE = os.environ.get("FABULA_NODE", "node")
     FFMPEG = os.environ.get("FABULA_FFMPEG", "ffmpeg")
+    # Dedicated render worker (a 2nd Railway service). When RENDER_WORKER_URL is set the
+    # heavy video render is dispatched there instead of running in this API process; the
+    # API polls the worker and pulls the finished video from R2. Leave unset = render
+    # locally (current behavior). RENDER_SECRET authenticates API<->worker calls.
+    RENDER_WORKER_URL = os.environ.get("FABULA_RENDER_WORKER_URL", "").strip().rstrip("/")
+    RENDER_SECRET = os.environ.get("FABULA_RENDER_SECRET", "").strip()
+    # Whether THIS process is allowed to run the Remotion (Chrome) engine. Off unless the
+    # render worker has Node+Chrome and the Remotion licence is in place.
+    REMOTION_ENABLED = os.environ.get("FABULA_REMOTION_ENABLED", "").strip().lower() in ("1", "true", "yes")
+    # The Remotion Node project (cinematic engine), shipped at backend/remotion.
+    REMOTION_DIR = os.environ.get("FABULA_REMOTION_DIR", os.path.join(ROOT, "remotion"))
+    NPX = os.environ.get("FABULA_NPX", "npx.cmd" if os.name == "nt" else "npx")
+    NODE = os.environ.get("FABULA_NODE", "node")
+    # AWS Lambda backend for Remotion (set on the render worker only). Assets are pulled
+    # from R2 by presigned URL; AWS creds come from the standard AWS_* env vars.
+    LAMBDA_FUNCTION = os.environ.get("REMOTION_LAMBDA_FUNCTION", "").strip()
+    LAMBDA_SERVE_URL = os.environ.get("REMOTION_LAMBDA_SERVE_URL", "").strip()
+    LAMBDA_REGION = os.environ.get("REMOTION_LAMBDA_REGION", "us-east-1").strip()
     # Fernet key for encrypting stored BYOK provider keys. Generated on first run
     # if absent (dev only); in production set FABULA_SECRET to a fixed value.
     SECRET = os.environ.get("FABULA_SECRET", "")

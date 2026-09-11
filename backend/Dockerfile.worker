@@ -1,0 +1,35 @@
+# Fábula RENDER WORKER image — python + ffmpeg + Node + headless Chrome + Remotion.
+# Deploy this as a SEPARATE Railway service (start command already set below). Kept
+# apart from the lean API image so this heavier build can never affect the live app.
+# Chrome-dependency package list is Remotion's official Docker list (remotion.dev/docs/docker).
+FROM python:3.12-slim
+
+# ffmpeg + thumbnail fonts + Remotion's headless-Chrome dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      ffmpeg fonts-dejavu-core curl ca-certificates \
+      libnss3 libdbus-1-3 libatk1.0-0 libgbm-dev libasound2 libxrandr2 \
+      libxkbcommon-dev libxfixes3 libxcomposite1 libxdamage1 libatk-bridge2.0-0 \
+      libpango-1.0-0 libcairo2 libcups2 \
+    && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . /app/
+
+# Build the Remotion project and fetch the headless browser at image-build time
+WORKDIR /app/remotion
+RUN npm ci && npx remotion browser ensure
+
+WORKDIR /app
+ENV FABULA_DB=/app/data/fabula.db \
+    FABULA_OUTPUT=/app/data/output \
+    FABULA_REMOTION_DIR=/app/remotion \
+    FABULA_REMOTION_ENABLED=1 \
+    PYTHONUNBUFFERED=1
+
+EXPOSE 8000
+CMD ["sh", "-c", "uvicorn app.worker:app --host 0.0.0.0 --port ${PORT:-8000}"]

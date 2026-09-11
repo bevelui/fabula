@@ -52,6 +52,43 @@ def upload_one(pid, local_path, name, log=lambda m: None):
     return True
 
 
+def download_one(pid, name, dest, log=lambda m: None):
+    """Fetch <pid>/<name> from R2 to a local path (used by the render worker)."""
+    if not enabled():
+        return False
+    os.makedirs(os.path.dirname(dest), exist_ok=True)
+    _client().download_file(settings.R2_BUCKET, f"{pid}/{name}", dest)
+    log(f"pulled {name} from R2")
+    return True
+
+
+def download_prefix(pid, prefix, dest_dir, log=lambda m: None):
+    """Fetch every object under <pid>/<prefix> into dest_dir (e.g. the images folder)."""
+    if not enabled():
+        return 0
+    c = _client()
+    n = 0
+    token = None
+    while True:
+        kw = {"Bucket": settings.R2_BUCKET, "Prefix": f"{pid}/{prefix}"}
+        if token:
+            kw["ContinuationToken"] = token
+        resp = c.list_objects_v2(**kw)
+        for obj in resp.get("Contents", []):
+            key = obj["Key"]
+            rel = key[len(f"{pid}/"):]
+            dest = os.path.join(dest_dir, rel.replace("/", os.sep))
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            c.download_file(settings.R2_BUCKET, key, dest)
+            n += 1
+        if resp.get("IsTruncated"):
+            token = resp.get("NextContinuationToken")
+        else:
+            break
+    log(f"pulled {n} files under {prefix} from R2")
+    return n
+
+
 def presigned_url(pid, name, expires=3600):
     """A temporary download URL for a private R2 object."""
     return _client().generate_presigned_url(

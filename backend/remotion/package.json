@@ -1,0 +1,28 @@
+{
+  "name": "fabula-remotion",
+  "version": "1.0.0",
+  "description": "Fabula cinematic render compositions (Remotion) — local render + AWS Lambda.",
+  "private": true,
+  "scripts": {
+    "studio": "remotion studio",
+    "render": "remotion render",
+    "bundle": "remotion bundle"
+  },
+  "dependencies": {
+    "@remotion/bundler": "4.0.513",
+    "@remotion/cli": "4.0.513",
+    "@remotion/google-fonts": "4.0.513",
+    "@remotion/lambda": "4.0.513",
+    "@remotion/media-utils": "4.0.513",
+    "@remotion/renderer": "4.0.513",
+    "@remotion/transitions": "4.0.513",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "remotion": "4.0.513",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/react": "19.2.3",
+    "typescript": "5.9.2"
+  }
+}
