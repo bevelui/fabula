@@ -84,9 +84,10 @@ def _do_render(req: RenderReq):
         out = os.path.join(outdir, "video.mp4")
 
         rec["status"] = "running"
-        # gather inputs (local-first, then R2)
+        # gather inputs (local-first, then R2). download_prefix keys already include the
+        # "images/" segment, so the destination is the PROJECT dir, not the images subdir.
         if not glob.glob(os.path.join(images, "img-*.jpg")):
-            storage.download_prefix(pid, "images/", images, log)
+            storage.download_prefix(pid, "images/", outdir, log)
         _ensure(pid, "narration.mp3", audio, log)
         _ensure(pid, "video.srt", srt, log)          # captions (ffmpeg) — optional
         _ensure(pid, "captions.json", caps_json, log)  # captions (remotion) — optional
