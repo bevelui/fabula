@@ -168,7 +168,11 @@ def run_stage(key, project, log, keys=None, artifacts=None):
             an = keys.get("anthropic")
             if an:
                 mdl = project.get("scene_model") or "claude-sonnet-5"
-                prompts = imageprompts.build_scene_prompts(script, lang, style, n, an, log, model=mdl)
+                try:
+                    prompts = imageprompts.build_scene_prompts(script, lang, style, n, an, log, model=mdl)
+                except Exception as e:
+                    log(f"scene planner had trouble ({str(e)[:120]}) — using a simple scene split so images still generate")
+                    prompts = _naive_scene_prompts(script, style, n)
             else:
                 log("no Claude key — using a simple scene split (add Claude for consistent characters)")
                 prompts = _naive_scene_prompts(script, style, n)

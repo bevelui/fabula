@@ -35,22 +35,80 @@ of scenes, covering the whole story in order. One-off background people may be d
 inline in "action" with chars []. Never depict text, letters, captions or signage."""
 
 
+def _balanced(s, open_idx):
+    """Return the balanced {...} substring starting at open_idx (a '{'), or None."""
+    depth = 0
+    for idx in range(open_idx, len(s)):
+        if s[idx] == "{":
+            depth += 1
+        elif s[idx] == "}":
+            depth -= 1
+            if depth == 0:
+                return s[open_idx:idx + 1]
+    return None
+
+
+def _salvage(frag):
+    """Recover what we can when the whole response isn't valid JSON: parse the
+    characters object and EACH scene object independently, skipping any single
+    malformed one (an unescaped quote in one scene shouldn't lose all the others)."""
+    chars = {}
+    m = re.search(r'"characters"\s*:\s*\{', frag)
+    if m:
+        obj = _balanced(frag, m.end() - 1)
+        if obj:
+            try:
+                chars = json.loads(obj)
+            except Exception:
+                chars = {}
+    scenes, depth, start = [], 0, None
+    m = re.search(r'"scenes"\s*:\s*\[', frag)
+    search_from = m.end() if m else 0
+    for idx in range(search_from, len(frag)):
+        ch = frag[idx]
+        if ch == "{":
+            if depth == 0:
+                start = idx
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0 and start is not None:
+                try:
+                    scenes.append(json.loads(frag[start:idx + 1]))
+                except Exception:
+                    pass
+                start = None
+        elif ch == "]" and depth == 0 and m:
+            break
+    if not scenes:
+        raise RuntimeError("could not parse any scenes from the prompt-builder response")
+    return {"characters": chars, "scenes": scenes}
+
+
 def _parse(text):
     text = text.strip()
     if text.startswith("```"):
         text = re.sub(r"^```[a-zA-Z]*\n?", "", text); text = re.sub(r"\n?```$", "", text).strip()
     i, j = text.find("{"), text.rfind("}")
-    if i < 0 or j < 0:
+    if i < 0:
         raise RuntimeError("no JSON in prompt-builder response")
-    return json.loads(text[i:j + 1])
+    if j > i:
+        try:
+            return json.loads(text[i:j + 1])          # fast path: valid JSON
+        except Exception:
+            pass
+    return _salvage(text[i:])                          # tolerant path: skip bad scenes
 
 
 def build_scene_prompts(script, language, style_prefix, n_scenes, api_key,
                         log=lambda m: None, model=MODEL):
     user = (f"Story language: {language}. Break this story into EXACTLY {n_scenes} scenes.\n\n"
-            f"STORY:\n{script}\n\nReturn the JSON now.")
+            f"STORY:\n{script}\n\nReturn the JSON now. Use plain straight text in every string; "
+            f"do not use double quotes inside a description (paraphrase instead) so the JSON stays valid.")
+    # scale the budget with scene count so long videos don't get truncated mid-array
+    max_tokens = min(16000, 2500 + n_scenes * 350)
     body = json.dumps({
-        "model": model, "max_tokens": 8000, "system": _SYSTEM,
+        "model": model, "max_tokens": max_tokens, "system": _SYSTEM,
         "messages": [{"role": "user", "content": user}],
     }).encode()
     log(f"planning {n_scenes} cinematic scenes with consistent characters ({model})")
