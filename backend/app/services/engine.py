@@ -12,7 +12,7 @@ import os, time
 import httpx
 from .. import catalog
 from ..config import settings
-from . import youtube, llm, tts, imageprompts, image_gen, captions as captions_svc, thumbnail as thumb_svc, render as render_svc, render_ffmpeg, render_remote, render_remotion
+from . import youtube, llm, tts, imageprompts, image_gen, captions as captions_svc, thumbnail as thumb_svc, render as render_svc, render_ffmpeg, render_remote, render_remotion, storage
 import glob, re, math
 
 
@@ -164,10 +164,29 @@ def run_stage(key, project, log, keys=None, artifacts=None):
             return {"images": None, "images_status": f"needs_{need}_key"}
         n = _scene_count(project, artifacts)
         out = os.path.join(_project_out(project), "images")
+        an = keys.get("anthropic")
+        mdl = project.get("scene_model") or "claude-sonnet-5"
+        dims = catalog.fmt(project.get("format")).get("img", (1920, 1080))
+        # Reference-locked characters: fal + Claude planner + R2 (references passed by URL).
+        locked = (bool(project.get("lock_characters")) and prov["id"] == "fal"
+                  and an and storage.enabled())
+
+        def _save_prompts(prompts):
+            with open(os.path.join(_project_out(project), "prompts.txt"), "w", encoding="utf-8") as f:
+                for i, p in enumerate(prompts, 1):
+                    f.write(f"--- scene {i} ---\n{p}\n\n")
+
         try:
-            an = keys.get("anthropic")
+            if locked:
+                log("consistent-characters mode: fal reference-locking is ON")
+                chars, scenes = imageprompts.build_scene_spec(script, lang, n, an, log, model=mdl)
+                prompts = imageprompts.assemble(chars, scenes, style)
+                _save_prompts(prompts)
+                paths = image_gen.generate_locked(keys["fal"], chars, scenes, style, out,
+                                                  project["id"], size=dims, log=log)
+                return {"images": out, "image_count": len(paths),
+                        "scene_prompts": prompts, "locked_characters": True}
             if an:
-                mdl = project.get("scene_model") or "claude-sonnet-5"
                 try:
                     prompts = imageprompts.build_scene_prompts(script, lang, style, n, an, log, model=mdl)
                 except Exception as e:
@@ -176,12 +195,7 @@ def run_stage(key, project, log, keys=None, artifacts=None):
             else:
                 log("no Claude key — using a simple scene split (add Claude for consistent characters)")
                 prompts = _naive_scene_prompts(script, style, n)
-            # save the prompts so the user can read them (also lands in the ZIP)
-            pf = os.path.join(_project_out(project), "prompts.txt")
-            with open(pf, "w", encoding="utf-8") as f:
-                for i, p in enumerate(prompts, 1):
-                    f.write(f"--- scene {i} ---\n{p}\n\n")
-            dims = catalog.fmt(project.get("format")).get("img", (1536, 864))
+            _save_prompts(prompts)
             paths = image_gen.generate(prov["id"], prompts, out, keys, log=log, size=dims)
         except httpx.HTTPStatusError as e:
             code = e.response.status_code

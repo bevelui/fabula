@@ -100,8 +100,9 @@ def _parse(text):
     return _salvage(text[i:])                          # tolerant path: skip bad scenes
 
 
-def build_scene_prompts(script, language, style_prefix, n_scenes, api_key,
-                        log=lambda m: None, model=MODEL):
+def build_scene_spec(script, language, n_scenes, api_key, log=lambda m: None, model=MODEL):
+    """Ask Claude for the structured {characters, scenes} plan. characters is
+    {KEY: plain-text description}; scenes is [{chars:[keys], action}]."""
     user = (f"Story language: {language}. Break this story into EXACTLY {n_scenes} scenes.\n\n"
             f"STORY:\n{script}\n\nReturn the JSON now. Use plain straight text in every string; "
             f"do not use double quotes inside a description (paraphrase instead) so the JSON stays valid.")
@@ -119,8 +120,15 @@ def build_scene_prompts(script, language, style_prefix, n_scenes, api_key,
         r.raise_for_status()
         data = r.json()
     spec = _parse("".join(b.get("text", "") for b in data.get("content", [])))
-    chars = spec.get("characters") or {}
+    raw = spec.get("characters") or {}
+    chars = {k: _as_text(v) for k, v in raw.items()} if isinstance(raw, dict) else {}
     scenes = spec.get("scenes") or spec.get("shots") or []
+    return chars, scenes
+
+
+def build_scene_prompts(script, language, style_prefix, n_scenes, api_key,
+                        log=lambda m: None, model=MODEL):
+    chars, scenes = build_scene_spec(script, language, n_scenes, api_key, log, model)
     prompts = assemble(chars, scenes, style_prefix)
     log(f"{len(prompts)} scene prompts built; {len(chars)} recurring characters")
     return prompts

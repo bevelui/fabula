@@ -157,8 +157,14 @@
         <div id="customWrap" hidden><label class="f">Describe your custom style</label>
           <input class="t" id="styleCustom" placeholder="e.g. vintage risograph print, two-tone"></div>
         <div class="row">
-          <div><label class="f">Image engine</label><select class="t" id="imgprov"></select></div>
+          <div><label class="f">Image engine</label><select class="t" id="imgprov" onchange="toggleLock()"></select></div>
           <div><label class="f">Voice engine</label><select class="t" id="audprov"></select></div>
+        </div>
+        <div id="lockWrap" style="margin:2px 0 6px;display:none">
+          <label class="f" style="display:flex;align-items:center;gap:8px;cursor:pointer;margin:0">
+            <input type="checkbox" id="lockchars"> 🔒 Consistent characters
+          </label>
+          <p class="note" style="margin:3px 0 0;font-size:11px">Locks each character's face &amp; outfit across every scene (fal.ai reference images). Needs your <b>fal</b> key + a <b>Claude</b> key. Slower and costs more per image.</p>
         </div>
         <div class="row">
           <div><label class="f">Writing model</label><select class="t" id="scriptmodel"></select></div>
@@ -201,7 +207,7 @@
     <b>Claude</b> = script + scene planning · <b>Fish</b> = narration · <b>Gemini</b> = images.</p>
   <div id="keyList"></div>
   <label class="f">Provider</label>
-  <select class="t" id="kp" onchange="document.getElementById('kpCustomWrap').hidden=this.value!=='custom'"><option value="anthropic">Claude (anthropic)</option><option value="fish">Fish Audio</option><option value="gemini">Gemini</option><option value="openai">OpenAI</option><option value="elevenlabs">ElevenLabs</option><option value="custom">Other platform (name it)…</option></select>
+  <select class="t" id="kp" onchange="document.getElementById('kpCustomWrap').hidden=this.value!=='custom'"><option value="anthropic">Claude (anthropic)</option><option value="fish">Fish Audio</option><option value="gemini">Gemini</option><option value="openai">OpenAI</option><option value="fal">fal.ai (Flux + characters)</option><option value="elevenlabs">ElevenLabs</option><option value="custom">Other platform (name it)…</option></select>
   <div id="kpCustomWrap" hidden><label class="f">Platform name</label>
     <input class="t" id="kpCustom" placeholder="e.g. stability, luma, playht — lowercase, no spaces"></div>
   <label class="f">API key</label>
@@ -246,7 +252,7 @@ async function init(){
   const co=document.createElement("option");co.value="custom";co.textContent="Custom…";ss.appendChild(co);
   ss.onchange=()=>{document.getElementById("customWrap").hidden = ss.value!=="custom";};
   const fill=(id,list)=>{const el=document.getElementById(id);list.forEach(p=>{const o=document.createElement("option");o.value=p.id;o.textContent=p.name;el.appendChild(o);});};
-  fill("imgprov",provs.image); fill("audprov",provs.audio);
+  fill("imgprov",provs.image); fill("audprov",provs.audio); toggleLock();
   fill("scriptmodel",provs.llm||[]); fill("scenemodel",provs.llm||[]);
   const sm=document.getElementById("scriptmodel"), dm=document.getElementById("scenemodel");
   if(sm) sm.onchange=()=>{document.getElementById("scriptCustomWrap").hidden = sm.value!=="custom";};
@@ -267,6 +273,7 @@ async function loadProjects(){
   });
 }
 
+function toggleLock(){ const w=document.getElementById("lockWrap"); if(w) w.style.display = (val("imgprov")==="fal")?"":"none"; }
 async function createProject(){
   const body={ channel_url:val("chan"), format:FORMAT, language:val("lang"), style_id:val("style"),
     style_custom: val("style")==="custom"?val("styleCustom"):null,
@@ -275,6 +282,7 @@ async function createProject(){
     script_model:val("scriptmodel"), script_model_custom: val("scriptmodel")==="custom"?val("scriptCustom"):null,
     scene_model:val("scenemodel"), scene_model_custom: val("scenemodel")==="custom"?val("sceneCustom"):null,
     length_words:parseInt(val("len"))||1200, num_images:parseInt(val("numimg"))||0,
+    lock_characters: val("imgprov")==="fal" && document.getElementById("lockchars").checked,
     voice_id:val("voice")||null, title:val("title")||null };
   if(SRC==="channel" && !body.channel_url){ alert("Add a channel URL"); return; }
   if(SRC==="own" && !body.user_script){ alert("Paste your script"); return; }

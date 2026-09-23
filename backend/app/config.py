@@ -20,7 +20,7 @@ _load_dotenv()
 
 class Settings:
     APP_NAME = "Fábula API"
-    VERSION = "0.3.4-no-local-video-copy"
+    VERSION = "0.4.0-fal-locked-characters"
     # SQLite for local dev; swap DATABASE_URL to Postgres/Supabase in production.
     DB_PATH = os.environ.get("FABULA_DB", os.path.join(ROOT, "data", "fabula.db"))
     OUTPUT_DIR = os.environ.get("FABULA_OUTPUT", os.path.join(ROOT, "data", "output"))
@@ -44,6 +44,10 @@ class Settings:
     REMOTION_DIR = os.environ.get("FABULA_REMOTION_DIR", os.path.join(ROOT, "remotion"))
     NPX = os.environ.get("FABULA_NPX", "npx.cmd" if os.name == "nt" else "npx")
     NODE = os.environ.get("FABULA_NODE", "node")
+    # fal.ai models (BYOK). Base text-to-image + the reference/edit model that locks
+    # character identity across scenes. Env-overridable as fal renames models.
+    FAL_IMAGE_MODEL = os.environ.get("FABULA_FAL_IMAGE_MODEL", "fal-ai/flux/dev")
+    FAL_EDIT_MODEL = os.environ.get("FABULA_FAL_EDIT_MODEL", "fal-ai/nano-banana/edit")
     # AWS Lambda backend for Remotion (set on the render worker only). Assets are pulled
     # from R2 by presigned URL; AWS creds come from the standard AWS_* env vars.
     LAMBDA_FUNCTION = os.environ.get("REMOTION_LAMBDA_FUNCTION", "").strip()

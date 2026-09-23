@@ -62,6 +62,8 @@ IMAGE_PROVIDERS = [
     {"id": "pollinations", "name": "Pollinations (free)", "key": None,     "free": True},
     {"id": "gemini",       "name": "Gemini · Nano Banana", "key": "gemini", "free": False},
     {"id": "openai",       "name": "OpenAI · GPT Image",   "key": "openai", "free": False},
+    {"id": "fal",          "name": "fal.ai · Flux (+ locked characters)", "key": "fal",
+     "free": False, "locks": True},
 ]
 AUDIO_PROVIDERS = [
     {"id": "edge",       "name": "Edge voices (free)", "key": None,         "free": True},

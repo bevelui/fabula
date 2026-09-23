@@ -24,6 +24,7 @@ class ProjectCreate(BaseModel):
     voice_id: Optional[str] = Field(None, description="voice id for the chosen TTS provider")
     length_words: int = Field(1200, ge=100, le=8000)
     num_images: int = Field(0, ge=0, le=200, description="0 = auto (~1 per 120 words)")
+    lock_characters: bool = False            # fal-only: reference-lock recurring characters
     render_engine: str = "ffmpeg"            # 'ffmpeg' | 'remotion' (chosen again at render)
     remotion_backend: str = "worker"         # when remotion: 'worker' | 'lambda'
     resolution: Optional[int] = None         # 480|720|1080; None = format default (long 720, short 1080)

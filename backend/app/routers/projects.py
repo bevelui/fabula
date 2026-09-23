@@ -39,6 +39,7 @@ def create_project(body: ProjectCreate, user: str = Depends(current_user)):
         "script_model": catalog.llm_model(body.script_model, body.script_model_custom),
         "scene_model": catalog.llm_model(body.scene_model, body.scene_model_custom),
         "length_words": body.length_words, "num_images": body.num_images,
+        "lock_characters": 1 if body.lock_characters else 0,
         "render_engine": catalog.render_engine(body.render_engine),
         "remotion_backend": catalog.remotion_backend(body.remotion_backend),
         "resolution": res,
