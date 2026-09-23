@@ -118,6 +118,7 @@
   <span class="tag">story-video studio</span>
   <div class="sp">
     <button class="hbtn" onclick="openKeys()">🔑 Keys</button>
+    <button class="hbtn" onclick="freeDisk()">🧹 Free disk</button>
     <button class="hbtn" onclick="openFb()">Feedback</button>
   </div>
 </header>
@@ -513,6 +514,12 @@ async function approveRender(pid){
 }
 
 // keys
+async function freeDisk(){
+  if(!confirm("Clear local file copies to free the server disk? Your videos/images stay safe in cloud storage (R2) and still download."))return;
+  try{ const r=await api("/maintenance/prune-local");
+    alert("Freed "+(r.freed_mb||0)+" MB from "+(r.pruned_projects||0)+" projects. Your files are safe in cloud storage.");
+  }catch(e){ alert(e.detail||"Could not free disk"); }
+}
 async function openKeys(){ document.getElementById("ovKeys").classList.add("on"); const ks=await api("/keys");
   const el=document.getElementById("keyList"); el.innerHTML = ks.length?"":'<p class="note">No keys yet.</p>';
   ks.forEach(k=>{ const d=document.createElement("div"); d.className="krow";

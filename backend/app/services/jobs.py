@@ -13,7 +13,7 @@ off. Pass fresh=True to force everything to regenerate from scratch.
 If only the render (assemble) fails, the project drops back to 'review' rather than
 'error', so the user can simply approve again to retry (now reusing the images).
 """
-import os, glob, json, threading, traceback
+import os, glob, json, shutil, threading, traceback
 from .. import db, security
 from ..config import settings
 from . import engine, storage
@@ -50,24 +50,44 @@ def _isfile(p):
 
 
 def _stage_done(key, project, art):
-    """True when this stage's output already exists and can be reused."""
+    """True when this stage's output already exists and can be reused — checked LOCAL
+    first, then R2 (so resume still skips finished stages after the local cache was
+    pruned to save disk)."""
     d = _out(project)
+    pid = project["id"]
+
+    def has(name):
+        return _isfile(os.path.join(d, name)) or storage.exists(pid, name)
+
     if key == "analyze":
         return "style_profile" in art
     if key == "script":
-        return bool(art.get("script")) and _isfile(os.path.join(d, "script.txt"))
+        return bool(art.get("script")) and has("script.txt")
     if key == "audio":
-        return bool(art.get("audio")) and _isfile(os.path.join(d, "narration.mp3"))
+        return bool(art.get("audio")) and has("narration.mp3")
     if key == "images":
+        want = int(art.get("image_count") or 1)
         got = len(glob.glob(os.path.join(d, "images", "img-*.jpg")))
-        return bool(art.get("images")) and got > 0 and got >= int(art.get("image_count") or 1)
+        if bool(art.get("images")) and got > 0 and got >= want:
+            return True
+        return bool(art.get("images")) and storage.count_prefix(pid, "images/") >= want
     if key == "captions":
-        return bool(art.get("srt")) and _isfile(art.get("srt"))
+        return bool(art.get("srt")) and has("video.srt")
     if key == "video":
-        return _isfile(os.path.join(d, "video.mp4"))
+        return has("video.mp4")
     if key == "thumbnail":
-        return _isfile(os.path.join(d, "thumbnail.jpg"))
+        return has("thumbnail.jpg")
     return False
+
+
+def _prune_local(project, log=lambda m: None):
+    """Delete a finished project's local files — R2 keeps the durable copies, and the
+    download/serve endpoints fall back to R2, so this just frees the disk volume."""
+    try:
+        shutil.rmtree(_out(project), ignore_errors=True)
+        log("cleared local copies to save disk (durable copies kept in R2)")
+    except Exception:
+        pass
 
 
 def _has_prepare(project, art):
@@ -127,6 +147,10 @@ def _run(jid):
         if storage.enabled():
             try:
                 storage.upload_dir(project["id"], _out(project), log)
+                # once R2 has the finished project, drop the local cache to save disk.
+                # (only when fully done — the review/assemble steps still need local files)
+                if end == "done":
+                    _prune_local(project, log)
             except Exception as e:
                 log(f"R2 upload skipped: {str(e)[:120]}")
     except Exception as e:

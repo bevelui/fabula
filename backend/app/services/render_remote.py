@@ -65,13 +65,13 @@ def render_via_worker(project, images_dir, audio_path, srt_path, out_path, engin
         if st == "error":
             raise RuntimeError("worker render failed: " + str(s.get("error"))[:200])
 
-    # Pull the finished video back (already local if the worker shared the folder).
-    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    # The worker already put the video in R2. DON'T copy it onto the API's small disk —
+    # the download endpoints serve it straight from R2. (Copying a big video here is what
+    # filled the volume: "No space left on device".)
     if os.path.isfile(out_path) and os.path.getsize(out_path) > 0:
-        pass
-    elif storage.enabled() and storage.download_one(pid, "video.mp4", out_path, log):
-        pass
+        log("render complete — video ready")            # shared-folder local dev
+    elif storage.enabled() and storage.exists(pid, "video.mp4"):
+        log("render complete — video stored in R2, served on demand (not copied to the app disk)")
     else:
-        raise RuntimeError("worker finished but the video could not be retrieved")
-    log(f"render complete — {os.path.getsize(out_path)/1e6:.1f} MB video ready")
+        raise RuntimeError("worker finished but the video is not in R2")
     return out_path

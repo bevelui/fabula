@@ -52,6 +52,37 @@ def upload_one(pid, local_path, name, log=lambda m: None):
     return True
 
 
+def exists(pid, name):
+    """True if <pid>/<name> is in R2 (used so resume still skips finished stages after
+    the local cache has been pruned)."""
+    if not enabled():
+        return False
+    try:
+        _client().head_object(Bucket=settings.R2_BUCKET, Key=f"{pid}/{name}")
+        return True
+    except Exception:
+        return False
+
+
+def count_prefix(pid, prefix):
+    """How many objects are under <pid>/<prefix> in R2 (e.g. images/)."""
+    if not enabled():
+        return 0
+    c = _client()
+    n, token = 0, None
+    while True:
+        kw = {"Bucket": settings.R2_BUCKET, "Prefix": f"{pid}/{prefix}"}
+        if token:
+            kw["ContinuationToken"] = token
+        resp = c.list_objects_v2(**kw)
+        n += len(resp.get("Contents", []))
+        if resp.get("IsTruncated"):
+            token = resp.get("NextContinuationToken")
+        else:
+            break
+    return n
+
+
 def download_one(pid, name, dest, log=lambda m: None):
     """Fetch <pid>/<name> from R2 to a local path (used by the render worker)."""
     if not enabled():

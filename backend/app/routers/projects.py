@@ -218,22 +218,56 @@ def project_file(pid: str, name: str, user: str = Depends(current_user)):
 @router.get("/projects/{pid}/zip")
 def project_zip(pid: str, user: str = Depends(current_user)):
     """Download everything the project generated (script, audio, images, captions,
-    video, thumbnail) as one zip."""
+    video, thumbnail) as one zip. Falls back to pulling from R2 if the local cache
+    was pruned to save disk."""
     if not db.fetchone("projects", id=pid, user_id=user):
         raise HTTPException(404, "project not found")
+    import zipfile, tempfile, shutil
     folder = os.path.join(settings.OUTPUT_DIR, pid)
-    if not os.path.isdir(folder) or not os.listdir(folder):
-        raise HTTPException(404, "nothing generated yet")
-    import zipfile, tempfile
-    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
-    tmp.close()
-    with zipfile.ZipFile(tmp.name, "w", zipfile.ZIP_DEFLATED) as z:
-        for root, _dirs, files in os.walk(folder):
-            for fn in files:
-                full = os.path.join(root, fn)
-                z.write(full, os.path.relpath(full, folder))
+    pulled = None
+    if not (os.path.isdir(folder) and os.listdir(folder)):
+        if storage.enabled():                           # local pruned → rebuild from R2
+            pulled = tempfile.mkdtemp(prefix="fabula_zip_")
+            storage.download_prefix(pid, "", pulled)
+            folder = pulled
+        if not (os.path.isdir(folder) and os.listdir(folder)):
+            raise HTTPException(404, "nothing generated yet")
+    try:
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
+        tmp.close()
+        with zipfile.ZipFile(tmp.name, "w", zipfile.ZIP_DEFLATED) as z:
+            for root, _dirs, files in os.walk(folder):
+                for fn in files:
+                    full = os.path.join(root, fn)
+                    z.write(full, os.path.relpath(full, folder))
+    finally:
+        if pulled:
+            shutil.rmtree(pulled, ignore_errors=True)
     return FileResponse(tmp.name, filename=f"fabula-{pid}.zip",
                         media_type="application/zip")
+
+
+@router.get("/maintenance/prune-local")
+def prune_local(user: str = Depends(current_user)):
+    """One-time cleanup: delete local files for your finished projects (R2 keeps durable
+    copies). Frees the disk volume. Running projects are skipped for safety."""
+    import shutil
+    freed_bytes, pruned = 0, 0
+    for p in db.fetchall("projects", user_id=user):
+        if p.get("status") == "running":
+            continue
+        d = os.path.join(settings.OUTPUT_DIR, p["id"])
+        if os.path.isdir(d):
+            for root, _dirs, files in os.walk(d):
+                for fn in files:
+                    try:
+                        freed_bytes += os.path.getsize(os.path.join(root, fn))
+                    except OSError:
+                        pass
+            shutil.rmtree(d, ignore_errors=True)
+            pruned += 1
+    return {"pruned_projects": pruned, "freed_mb": round(freed_bytes / 1e6, 1),
+            "note": "durable copies remain in R2; downloads still work"}
 
 
 @router.get("/jobs/{jid}")
